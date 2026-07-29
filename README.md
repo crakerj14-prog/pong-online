@@ -18,7 +18,23 @@ Es el mismo juego que tenes en local: palas, pelota, marcador, **poderes**
 (pala grande / pala chica / bola rapida / bola lenta), **empujon** (dash con
 Shift) con su **impulso** (golpe potenciado que acelera la bola y le cambia
 el color unos segundos), particulas, estela, brillo, lineas de escaneo, los
-6 temas de color, y sonido.
+6 temas de color, y sonido. Ademas, exclusivo de esta version online: control
+por **mouse** (la pala sigue al cursor 1 a 1, sin limite de velocidad — mover
+las flechas te devuelve al control por teclado) y **obstaculos** que rebotan
+solos en el medio del campo.
+
+Los obstaculos se implementaron reusando `colisiones.resolver_pala` tal cual:
+para la fisica, un obstaculo es una pala mas, solo que nadie la controla y se
+mueve sola. Estan confinados a la franja central (`OBSTACULO_ZONA_X` en
+`server/ajustes.py`) para no invadir nunca la zona de las palas.
+
+**Sobre el mouse sin limite de velocidad**: en teoria, un salto de cursor muy
+rapido podria "saltearse" la pelota sin que se detecte el choque (la
+deteccion de colisiones esta pensada para el movimiento de la pelota, no para
+que la pala misma salte de golpe). Es un riesgo aceptado a proposito para un
+juego casual — en el peor caso se escapa un punto, nada se rompe. Esta
+documentado en `Partida._mover_jugador` en `server/main.py` por si algun dia
+hace falta ponerle un limite.
 
 Lo unico que no tiene sentido en un lobby de dos jugadores remotos —
 seleccionar dificultad de CPU, elegir puntos para ganar antes de empezar — se
@@ -101,6 +117,11 @@ Vas a ver algo como `Uvicorn running on http://127.0.0.1:8000`.
 7. Abri el panel "Ajustes" (abajo del campo) en una sola pestaña y cambiale
    el tema o apagale las particulas — la otra pestaña no se tiene que
    inmutar, porque es una preferencia 100% local de cada navegador.
+8. Movete con el mouse sobre el campo: la pala tiene que seguir al cursor de
+   inmediato (no a la velocidad fija del teclado). Apretá una flecha y
+   confirma que vuelve a mandar el teclado.
+9. Confirma que los dos bloques que rebotan en el medio del campo se muevan
+   solos y que la bola rebote contra ellos igual que contra una pala.
 
 Si abris una **tercera** pestaña mientras las otras dos estan jugando, esa
 queda esperando a que se libere un lugar (arranca su propia partida en

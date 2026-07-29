@@ -72,3 +72,16 @@ IMPULSO_TECHO = 1.4
 IMPULSO_FACTOR_ASENTADO = 1.30
 IMPULSO_DURACION_SEG = 3.0
 IMPULSO_COLOR = "#ff3864"  # fijo, no depende del tema del cliente
+
+
+# --- Obstaculos ----------------------------------------------------------
+# Bloques que rebotan solos en la franja central, lejos de ambas palas.
+# OBSTACULO_ZONA_X los confina como fraccion del ancho del campo: con
+# margen 34 + ancho de pala 12 = 46, y la zona empezando en 0.36 (=288px),
+# queda de sobra sin invadir donde se mueven las palas.
+OBSTACULO_CANTIDAD = 2
+OBSTACULO_ANCHO = 20
+OBSTACULO_ALTO = 60
+OBSTACULO_VEL_MIN = 1.2
+OBSTACULO_VEL_MAX = 2.4
+OBSTACULO_ZONA_X = (0.36, 0.64)

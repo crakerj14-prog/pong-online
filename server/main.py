@@ -6,11 +6,11 @@ Un solo proceso hace dos cosas:
   2. Acepta conexiones WebSocket en /ws, empareja de a dos, y corre el loop
      de juego para cada partida a 60 cuadros por segundo.
 
-Los clientes nunca calculan fisica: solo mandan que teclas tienen presionadas
-(y cuando se dispara el empujon) y reciben el estado completo del juego en
-cada cuadro, mas una lista de "eventos" puntuales (golpes, puntos, poderes)
-para que decidan como festejarlos con particulas y sonido. Ver PROTOCOLO.md
-para el formato exacto de los mensajes.
+Los clientes nunca calculan fisica: solo mandan input (teclado, mouse, el
+disparo del empujon) y reciben el estado completo del juego en cada cuadro,
+mas una lista de "eventos" puntuales (golpes, puntos, poderes) para que
+decidan como festejarlos con particulas y sonido. Ver PROTOCOLO.md para el
+formato exacto de los mensajes.
 
 Ejecutar con:  uvicorn main:app --reload
 """
@@ -38,19 +38,71 @@ app = FastAPI()
 
 
 class Jugador:
-    """Un extremo de la conexion: el WebSocket y las teclas que tiene apretadas."""
+    """Un extremo de la conexion: el WebSocket y el input que va mandando."""
 
     def __init__(self, ws: WebSocket):
         self.ws = ws
         self.arriba = False
         self.abajo = False
-        self.partida = None  # se asigna al emparejar con un rival
-        self.numero = None   # 1 o 2, se asigna al emparejar
+        self.mouse_y = None       # ultimo Y de mouse recibido, o None si nunca mando uno
+        self.modo_control = "teclado"  # o "mouse": gana el que se uso mas reciente
+        self.partida = None       # se asigna al emparejar con un rival
+        self.numero = None        # 1 o 2, se asigna al emparejar
 
     @property
     def direccion(self):
         """-1 arriba, +1 abajo, 0 quieto. Mismo signo que Pala.mover()."""
         return int(self.abajo) - int(self.arriba)
+
+
+class Obstaculo:
+    """Bloque que rebota solo en la franja central del campo.
+
+    Se comporta como una pala inmovil para la fisica de rebote — reusa
+    colisiones.resolver_pala tal cual, sin tocarle una linea a ese modulo —
+    pero nadie la controla y nunca le imprime efecto extra a la bola
+    (velocidad_actual siempre en 0).
+    """
+
+    def __init__(self, x, y, ancho, alto, vx, vy):
+        self.x = x
+        self.y = y
+        self.ancho = ancho
+        self.alto = alto
+        self.vx = vx
+        self.vy = vy
+        self.velocidad_actual = 0.0
+
+    @property
+    def centro_y(self):
+        return self.y + self.alto / 2
+
+    def caja(self):
+        return self.x, self.y, self.x + self.ancho, self.y + self.alto
+
+    def mover(self, x_min, x_max, y_min, y_max):
+        self.x += self.vx
+        self.y += self.vy
+        if self.x < x_min or self.x + self.ancho > x_max:
+            self.vx = -self.vx
+            self.x = max(x_min, min(x_max - self.ancho, self.x))
+        if self.y < y_min or self.y + self.alto > y_max:
+            self.vy = -self.vy
+            self.y = max(y_min, min(y_max - self.alto, self.y))
+
+
+def _crear_obstaculos():
+    x_min_frac, x_max_frac = cfg.OBSTACULO_ZONA_X
+    x_min = cfg.ANCHO * x_min_frac
+    x_max = cfg.ANCHO * x_max_frac
+    obstaculos = []
+    for _ in range(cfg.OBSTACULO_CANTIDAD):
+        x = random.uniform(x_min, x_max - cfg.OBSTACULO_ANCHO)
+        y = random.uniform(0, cfg.ALTO - cfg.OBSTACULO_ALTO)
+        vx = random.choice((-1, 1)) * random.uniform(cfg.OBSTACULO_VEL_MIN, cfg.OBSTACULO_VEL_MAX)
+        vy = random.choice((-1, 1)) * random.uniform(cfg.OBSTACULO_VEL_MIN, cfg.OBSTACULO_VEL_MAX)
+        obstaculos.append(Obstaculo(x, y, cfg.OBSTACULO_ANCHO, cfg.OBSTACULO_ALTO, vx, vy))
+    return obstaculos
 
 
 class Partida:
@@ -62,6 +114,7 @@ class Partida:
         self.pala1 = Pala(cfg.PALA_MARGEN)
         self.pala2 = Pala(cfg.ANCHO - cfg.PALA_MARGEN - cfg.PALA_ANCHO)
         self.bola = Bola()
+        self.obstaculos = _crear_obstaculos()
         self.poderes = Poderes(self.pala1, self.pala2)
         self.empujon1 = Empujon(self.pala1, hacia_derecha=True)
         self.empujon2 = Empujon(self.pala2, hacia_derecha=False)
@@ -88,13 +141,18 @@ class Partida:
 
     # --- Bucle de fisica ---------------------------------------------------
     def actualizar(self):
-        self.pala1.mover(self.j1.direccion)
-        self.pala2.mover(self.j2.direccion)
+        self._mover_jugador(self.pala1, self.j1)
+        self._mover_jugador(self.pala2, self.j2)
         self.pala1.actualizar_efecto()
         self.pala2.actualizar_efecto()
         self.empujon1.actualizar()
         self.empujon2.actualizar()
         self.poderes.actualizar_spawn(habilitado=True)
+
+        x_min_frac, x_max_frac = cfg.OBSTACULO_ZONA_X
+        x_min, x_max = cfg.ANCHO * x_min_frac, cfg.ANCHO * x_max_frac
+        for obstaculo in self.obstaculos:
+            obstaculo.mover(x_min, x_max, 0, cfg.ALTO)
 
         if self.espera_saque > 0:
             self.espera_saque -= 1
@@ -102,6 +160,33 @@ class Partida:
 
         self.impulso.actualizar(self.bola)
         self._mover_bola()
+
+    def _mover_jugador(self, pala, jugador):
+        """Teclado mueve a velocidad fija (Pala.mover); mouse sigue al cursor
+        1 a 1, sin tope de velocidad — gana el que se uso mas reciente.
+
+        Nota: sin tope de velocidad, en teoria un salto de mouse MUY rapido
+        podria saltearse la pelota sin que se detecte el choque (el barrido
+        de colisiones.py cubre el movimiento de la pelota, no el de la pala
+        saltando de golpe). Para un juego casual el riesgo se acepta: en el
+        peor caso se escapa un punto, no se rompe nada. Si algun dia se
+        siente injusto, la forma mas simple de arreglarlo es limitar el
+        salto maximo por cuadro en _mover_pala_a a algo <= pala.alto.
+        """
+        if jugador.modo_control == "mouse" and jugador.mouse_y is not None:
+            self._mover_pala_a(pala, jugador.mouse_y)
+        else:
+            pala.mover(jugador.direccion)
+
+    @staticmethod
+    def _mover_pala_a(pala, y_centro_objetivo):
+        anterior = pala.y
+        nueva_y = y_centro_objetivo - pala.alto / 2
+        pala.y = max(0, min(cfg.ALTO - pala.alto, nueva_y))
+        # Se calcula a mano porque Pala.mover() no se llamo: sin esto, el
+        # empujon que la pala le da a la pelota al golpearla (ver
+        # colisiones._rebote_frontal) se quedaria con un valor viejo.
+        pala.velocidad_actual = pala.y - anterior
 
     def _mover_bola(self):
         bola = self.bola
@@ -133,6 +218,15 @@ class Partida:
                 self._evento_sonido(900, 60)
             else:
                 self.impulso.cancelar()
+            break
+
+        for obstaculo in self.obstaculos:
+            resultado = colisiones.resolver_pala(bola, obstaculo, cfg.DIFICULTAD)
+            if resultado is None:
+                continue
+            cantidad = 14 if resultado["tipo"] == "frontal" else 8
+            self._evento_particulas(bola.centro_x, bola.centro_y, "acento", cantidad)
+            self._evento_sonido(300, 15)
             break
 
         resultado_poder = self.poderes.recoger_si_toca(bola)
@@ -188,6 +282,10 @@ class Partida:
             "bola": {"x": round(self.bola.x, 1), "y": round(self.bola.y, 1)},
             "pala1": {"x": round(self.pala1.x, 1), "y": round(self.pala1.y, 1), "alto": round(self.pala1.alto, 1)},
             "pala2": {"x": round(self.pala2.x, 1), "y": round(self.pala2.y, 1), "alto": round(self.pala2.alto, 1)},
+            "obstaculos": [
+                {"x": round(o.x, 1), "y": round(o.y, 1), "ancho": o.ancho, "alto": o.alto}
+                for o in self.obstaculos
+            ],
             "marcador": self.marcador,
             "saque": self.espera_saque > 0,
             "cuenta_saque": self.espera_saque // (cfg.FRAMES_SAQUE // 3 + 1) + 1,
@@ -274,6 +372,12 @@ async def websocket_endpoint(ws: WebSocket):
                     jugador.arriba = presionada
                 elif tecla == "abajo":
                     jugador.abajo = presionada
+                jugador.modo_control = "teclado"
+            elif tipo == "mouse":
+                y = mensaje.get("y")
+                if isinstance(y, (int, float)):
+                    jugador.mouse_y = float(y)
+                    jugador.modo_control = "mouse"
             elif tipo == "accion":
                 if mensaje.get("accion") == "empujon" and jugador.partida is not None:
                     jugador.partida.activar_empujon(jugador.numero)

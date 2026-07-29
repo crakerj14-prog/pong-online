@@ -324,7 +324,6 @@ window.addEventListener("keydown", (evento) => {
   const rol = rolDeTecla(evento.code);
   if (rol) {
     evento.preventDefault();
-    usandoMouse = false; // el teclado manda apenas se usa
     enviarInput(rol, true);
     return;
   }
@@ -357,47 +356,27 @@ window.addEventListener("blur", () => {
 });
 
 // --- Control por mouse ---------------------------------------------------
-// El servidor solo entiende "arriba"/"abajo" sostenidos (no una posicion
-// absoluta): mandarle directamente la posicion del mouse permitiria que la
-// pala salte de golpe cualquier distancia, lo que rompe el balance del
-// juego y hasta podria saltarse la pelota sin colision (el barrido de
-// colisiones.py asume que la pala se mueve a PALA_VEL por cuadro). Por eso
-// el mouse tambien se traduce a "perseguir" el cursor con la misma
-// velocidad de siempre, igual que ya hace la CPU del juego de escritorio.
-let mouseY = null;
-let usandoMouse = false;
-const ZONA_MUERTA_MOUSE = 4;
+// La pala sigue al mouse 1 a 1 (sin tope de velocidad) — el servidor la
+// mueve directo a la posicion que le mandamos aca, no hay "persecucion" a
+// velocidad fija como con el teclado. Mandar cualquier input de teclado
+// hace que el servidor vuelva a usar el teclado para esa pala.
+//
+// Se manda desde el evento mousemove (no en un loop aparte) para no mandar
+// nada mientras el mouse esta quieto, con un throttle simple para no
+// inundar el socket si el navegador dispara mousemove muy seguido.
+let ultimoEnvioMouseMs = 0;
+const INTERVALO_MOUSE_MS = 16; // ~60 mensajes por segundo como mucho
 
 lienzo.addEventListener("mousemove", (evento) => {
-  usandoMouse = true;
+  const ahora = performance.now();
+  if (ahora - ultimoEnvioMouseMs < INTERVALO_MOUSE_MS) return;
+  ultimoEnvioMouseMs = ahora;
+
   const caja = lienzo.getBoundingClientRect();
   const escalaY = geometria.campo.alto / caja.height;
-  mouseY = (evento.clientY - caja.top) * escalaY;
+  const y = (evento.clientY - caja.top) * escalaY;
+  enviarMensaje({ type: "mouse", y: Math.round(y * 10) / 10 });
 });
-
-lienzo.addEventListener("mouseleave", () => {
-  usandoMouse = false;
-  enviarInput("arriba", false);
-  enviarInput("abajo", false);
-});
-
-function actualizarControlMouse() {
-  if (!usandoMouse || mouseY === null || !ultimoEstado || miNumero === null) return;
-  const miPala = miNumero === 1 ? ultimoEstado.pala1 : ultimoEstado.pala2;
-  const centro = miPala.y + miPala.alto / 2;
-  const diferencia = mouseY - centro;
-
-  if (diferencia < -ZONA_MUERTA_MOUSE) {
-    enviarInput("arriba", true);
-    enviarInput("abajo", false);
-  } else if (diferencia > ZONA_MUERTA_MOUSE) {
-    enviarInput("abajo", true);
-    enviarInput("arriba", false);
-  } else {
-    enviarInput("arriba", false);
-    enviarInput("abajo", false);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Dibujo
@@ -439,6 +418,14 @@ function dibujarPala(estadoPala, ancho, color, esLaMia) {
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
     ctx.strokeRect(estadoPala.x - 2, estadoPala.y - 2, ancho + 4, estadoPala.alto + 4);
+  }
+}
+
+function dibujarObstaculos() {
+  const t = temaActual();
+  const color = mezclar(t.tenue, t.texto, 0.25);
+  for (const o of ultimoEstado.obstaculos) {
+    rectConBrillo(o.x, o.y, o.ancho, o.alto, color);
   }
 }
 
@@ -541,6 +528,7 @@ function dibujar() {
   const t = temaActual();
 
   dibujarMarcador();
+  dibujarObstaculos();
   if (ajustes.particulas) dibujarParticulas();
   if (ajustes.estela) dibujarEstela();
   if (ultimoEstado.poder) dibujarPoder(ultimoEstado.poder);
@@ -573,7 +561,6 @@ function dibujar() {
 
 function cuadro() {
   reloj += 1;
-  actualizarControlMouse();
   actualizarParticulas();
   dibujar();
   requestAnimationFrame(cuadro);

@@ -36,6 +36,10 @@ mientras la partida esta activa).
   "bola": { "x": 394.0, "y": 210.5 },
   "pala1": { "x": 34.0, "y": 209.0, "alto": 82.0 },
   "pala2": { "x": 754.0, "y": 250.3, "alto": 131.2 },
+  "obstaculos": [
+    { "x": 300.0, "y": 120.0, "ancho": 20, "alto": 60 },
+    { "x": 480.0, "y": 340.0, "ancho": 20, "alto": 60 }
+  ],
   "marcador": [2, 1],
   "saque": false,
   "cuenta_saque": 3,
@@ -53,6 +57,10 @@ mientras la partida esta activa).
   `alto` tambien varia cuando un poder agranda o encoge la pala. El cliente
   tiene que dibujar la pala en el `x`/`y`/`alto` que le llega en cada
   `estado`, no en valores fijos calculados a partir de `inicio`.
+- `obstaculos`: bloques que rebotan solos en la franja central del campo y
+  hacen rebotar la bola igual que una pala. La cantidad es fija durante toda
+  la partida (por defecto 2); el cliente los dibuja donde le digan, sin logica
+  propia — el servidor calcula todo su movimiento.
 - `saque` es `true` durante la cuenta atras antes de cada saque; `cuenta_saque`
   es el numero (3, 2, 1) para mostrar mientras tanto.
 - Cuando `terminada` pasa a `true`, `ganador` es `1` o `2` y ese es el ultimo
@@ -99,3 +107,16 @@ la tecla de empujon (Shift), nunca en el keyup ni en auto-repeat.
 ```
 El servidor ignora el mensaje si el empujon de ese jugador todavia esta en
 cooldown (no revienta ni contesta error, simplemente no pasa nada).
+
+### `mouse`
+Se manda cuando el mouse se mueve sobre el campo (con throttling del lado
+del cliente, no en cada evento nativo del navegador).
+```json
+{ "type": "mouse", "y": 234.5 }
+```
+`y` es la posicion deseada del **centro** de la pala, en coordenadas del
+campo (0 a `campo.alto`). El servidor mueve la pala directamente ahi, sin
+limite de velocidad — a diferencia de `input`, no hay un tope de cuanto
+puede moverse por cuadro. Mandar `input` (cualquier tecla, presionada o no)
+hace que el servidor vuelva a usar el teclado para esa pala hasta el
+proximo mensaje `mouse`.
