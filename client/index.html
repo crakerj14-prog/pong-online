@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>PONG EU PIBES — Online</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <h1>PONG EU PIBES <span class="etiqueta">online</span></h1>
+
+    <div id="mensaje" class="mensaje">Conectando...</div>
+
+    <canvas id="campo" width="800" height="500"></canvas>
+
+    <p class="ayuda">
+      Flecha arriba / Flecha abajo para mover tu pala. <strong>Shift</strong> para el empujon.
+    </p>
+
+    <details id="ajustes">
+      <summary>Ajustes</summary>
+      <div class="fila-ajustes">
+        <label>
+          Tema
+          <select id="ajuste-tema"></select>
+        </label>
+        <label><input type="checkbox" id="ajuste-brillo" /> Brillo</label>
+        <label><input type="checkbox" id="ajuste-estela" /> Estela</label>
+        <label><input type="checkbox" id="ajuste-particulas" /> Particulas</label>
+        <label><input type="checkbox" id="ajuste-scanlines" /> Lineas de escaneo</label>
+        <label><input type="checkbox" id="ajuste-sonido" /> Sonido</label>
+      </div>
+    </details>
+  </main>
+
+  <script src="client.js"></script>
+</body>
+</html>

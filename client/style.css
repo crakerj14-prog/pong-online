@@ -1,0 +1,109 @@
+:root {
+  --fondo: #05070d;
+  --campo: #0d1424;
+  --borde: #1e2b47;
+  --linea: #243354;
+  --pala1: #22d3ee;
+  --pala2: #f472b6;
+  --bola: #fde047;
+  --texto: #e8eef7;
+  --tenue: #5b6b87;
+  --acento: #22d3ee;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: "Consolas", "Courier New", monospace;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: 2px;
+  color: var(--acento);
+}
+
+h1 .etiqueta {
+  font-size: 14px;
+  color: var(--tenue);
+  letter-spacing: 1px;
+  vertical-align: middle;
+}
+
+.mensaje {
+  min-height: 20px;
+  font-size: 14px;
+  color: var(--tenue);
+}
+
+.mensaje.aviso {
+  color: var(--bola);
+}
+
+canvas {
+  background: var(--campo);
+  border: 2px solid var(--borde);
+  max-width: 100%;
+  height: auto;
+}
+
+.ayuda {
+  margin: 0;
+  font-size: 12px;
+  color: var(--tenue);
+}
+
+#ajustes {
+  width: 100%;
+  max-width: 800px;
+  font-size: 12px;
+  color: var(--tenue);
+}
+
+#ajustes summary {
+  cursor: pointer;
+  color: var(--acento);
+  user-select: none;
+}
+
+.fila-ajustes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 4px;
+}
+
+.fila-ajustes label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--texto);
+}
+
+.fila-ajustes select {
+  background: var(--campo);
+  color: var(--texto);
+  border: 1px solid var(--borde);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 4px;
+}
