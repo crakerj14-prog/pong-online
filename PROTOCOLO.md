@@ -34,8 +34,8 @@ mientras la partida esta activa).
 {
   "type": "estado",
   "bola": { "x": 394.0, "y": 210.5 },
-  "pala1": { "y": 209.0, "alto": 82.0 },
-  "pala2": { "y": 250.3, "alto": 131.2 },
+  "pala1": { "x": 34.0, "y": 209.0, "alto": 82.0 },
+  "pala2": { "x": 754.0, "y": 250.3, "alto": 131.2 },
   "marcador": [2, 1],
   "saque": false,
   "cuenta_saque": 3,
@@ -48,10 +48,11 @@ mientras la partida esta activa).
   "eventos": []
 }
 ```
-- `pala1`/`pala2`: la pala 1 siempre esta a la izquierda, la 2 siempre a la
-  derecha (la X es fija, ya la mando `inicio`; solo cambian `y` y `alto` — el
-  `alto` varia cuando un poder agranda o encoge la pala, asi que el cliente
-  **tiene** que usar este valor para dibujarla, no un tamano fijo).
+- `pala1`/`pala2`: la pala 1 arranca a la izquierda, la 2 a la derecha, pero
+  `x` **si puede cambiar**: el empujon mueve la pala en X durante el dash. El
+  `alto` tambien varia cuando un poder agranda o encoge la pala. El cliente
+  tiene que dibujar la pala en el `x`/`y`/`alto` que le llega en cada
+  `estado`, no en valores fijos calculados a partir de `inicio`.
 - `saque` es `true` durante la cuenta atras antes de cada saque; `cuenta_saque`
   es el numero (3, 2, 1) para mostrar mientras tanto.
 - Cuando `terminada` pasa a `true`, `ganador` es `1` o `2` y ese es el ultimo

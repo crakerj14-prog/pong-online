@@ -324,6 +324,7 @@ window.addEventListener("keydown", (evento) => {
   const rol = rolDeTecla(evento.code);
   if (rol) {
     evento.preventDefault();
+    usandoMouse = false; // el teclado manda apenas se usa
     enviarInput(rol, true);
     return;
   }
@@ -354,6 +355,49 @@ window.addEventListener("blur", () => {
   enviarInput("abajo", false);
   empujonPresionado = false;
 });
+
+// --- Control por mouse ---------------------------------------------------
+// El servidor solo entiende "arriba"/"abajo" sostenidos (no una posicion
+// absoluta): mandarle directamente la posicion del mouse permitiria que la
+// pala salte de golpe cualquier distancia, lo que rompe el balance del
+// juego y hasta podria saltarse la pelota sin colision (el barrido de
+// colisiones.py asume que la pala se mueve a PALA_VEL por cuadro). Por eso
+// el mouse tambien se traduce a "perseguir" el cursor con la misma
+// velocidad de siempre, igual que ya hace la CPU del juego de escritorio.
+let mouseY = null;
+let usandoMouse = false;
+const ZONA_MUERTA_MOUSE = 4;
+
+lienzo.addEventListener("mousemove", (evento) => {
+  usandoMouse = true;
+  const caja = lienzo.getBoundingClientRect();
+  const escalaY = geometria.campo.alto / caja.height;
+  mouseY = (evento.clientY - caja.top) * escalaY;
+});
+
+lienzo.addEventListener("mouseleave", () => {
+  usandoMouse = false;
+  enviarInput("arriba", false);
+  enviarInput("abajo", false);
+});
+
+function actualizarControlMouse() {
+  if (!usandoMouse || mouseY === null || !ultimoEstado || miNumero === null) return;
+  const miPala = miNumero === 1 ? ultimoEstado.pala1 : ultimoEstado.pala2;
+  const centro = miPala.y + miPala.alto / 2;
+  const diferencia = mouseY - centro;
+
+  if (diferencia < -ZONA_MUERTA_MOUSE) {
+    enviarInput("arriba", true);
+    enviarInput("abajo", false);
+  } else if (diferencia > ZONA_MUERTA_MOUSE) {
+    enviarInput("abajo", true);
+    enviarInput("arriba", false);
+  } else {
+    enviarInput("arriba", false);
+    enviarInput("abajo", false);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Dibujo
@@ -387,12 +431,14 @@ function dibujarCampo() {
   }
 }
 
-function dibujarPala(x, estadoPala, ancho, color, esLaMia) {
-  rectConBrillo(x, estadoPala.y, ancho, estadoPala.alto, color);
+function dibujarPala(estadoPala, ancho, color, esLaMia) {
+  // estadoPala.x refleja la posicion real del servidor, incluido el
+  // desplazamiento del empujon — no un x fijo calculado de "inicio".
+  rectConBrillo(estadoPala.x, estadoPala.y, ancho, estadoPala.alto, color);
   if (esLaMia) {
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
-    ctx.strokeRect(x - 2, estadoPala.y - 2, ancho + 4, estadoPala.alto + 4);
+    ctx.strokeRect(estadoPala.x - 2, estadoPala.y - 2, ancho + 4, estadoPala.alto + 4);
   }
 }
 
@@ -499,11 +545,8 @@ function dibujar() {
   if (ajustes.estela) dibujarEstela();
   if (ultimoEstado.poder) dibujarPoder(ultimoEstado.poder);
 
-  dibujarPala(geometria.pala.margen, ultimoEstado.pala1, geometria.pala.ancho, t.pala_izq, miNumero === 1);
-  dibujarPala(
-    geometria.campo.ancho - geometria.pala.margen - geometria.pala.ancho,
-    ultimoEstado.pala2, geometria.pala.ancho, t.pala_der, miNumero === 2
-  );
+  dibujarPala(ultimoEstado.pala1, geometria.pala.ancho, t.pala_izq, miNumero === 1);
+  dibujarPala(ultimoEstado.pala2, geometria.pala.ancho, t.pala_der, miNumero === 2);
 
   dibujarIndicadorEmpujon(ultimoEstado.empujon1, t.pala_izq, "izq");
   dibujarIndicadorEmpujon(ultimoEstado.empujon2, t.pala_der, "der");
@@ -530,6 +573,7 @@ function dibujar() {
 
 function cuadro() {
   reloj += 1;
+  actualizarControlMouse();
   actualizarParticulas();
   dibujar();
   requestAnimationFrame(cuadro);

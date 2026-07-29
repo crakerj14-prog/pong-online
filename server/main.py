@@ -186,8 +186,8 @@ class Partida:
         mensaje = {
             "type": "estado",
             "bola": {"x": round(self.bola.x, 1), "y": round(self.bola.y, 1)},
-            "pala1": {"y": round(self.pala1.y, 1), "alto": round(self.pala1.alto, 1)},
-            "pala2": {"y": round(self.pala2.y, 1), "alto": round(self.pala2.alto, 1)},
+            "pala1": {"x": round(self.pala1.x, 1), "y": round(self.pala1.y, 1), "alto": round(self.pala1.alto, 1)},
+            "pala2": {"x": round(self.pala2.x, 1), "y": round(self.pala2.y, 1), "alto": round(self.pala2.alto, 1)},
             "marcador": self.marcador,
             "saque": self.espera_saque > 0,
             "cuenta_saque": self.espera_saque // (cfg.FRAMES_SAQUE // 3 + 1) + 1,
