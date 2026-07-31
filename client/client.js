@@ -1,27 +1,27 @@
-// Cliente de Pong triangular (3 jugadores). Solo dibuja lo que el servidor
-// manda: no calcula fisica, colisiones, ni vidas. Poderes/empujon/impulso
-// son estado autoritativo del servidor; particulas/estela/sonido son 100%
-// cosmeticos y reaccionan a los "eventos" que manda el servidor, pero viven
-// y se animan aca nomas.
+// Cliente de Pong (2 a 4 jugadores, elegido por el anfitrion en el lobby).
+// Solo dibuja lo que el servidor manda: no calcula fisica, colisiones, ni
+// vidas. Poderes/empujon/impulso son estado autoritativo del servidor;
+// particulas/estela/sonido son 100% cosmeticos y reaccionan a los "eventos"
+// que manda el servidor, pero viven y se animan aca nomas.
 
 // ---------------------------------------------------------------------------
 // Temas — paletas de color, preferencia local de cada jugador (localStorage,
 // el equivalente web del ajustes.json de escritorio). El servidor no sabe
-// que tema tiene puesto cada uno.
+// que tema tiene puesto cada uno. `pala4` solo se usa en partidas de 4.
 // ---------------------------------------------------------------------------
 const TEMAS = [
   { nombre: "Neon", fondo: "#05070d", campo: "#0d1424", borde: "#1e2b47", linea: "#243354",
-    pala1: "#22d3ee", pala2: "#f472b6", pala3: "#a3e635", bola: "#fde047", texto: "#e8eef7", tenue: "#5b6b87", acento: "#22d3ee" },
+    pala1: "#22d3ee", pala2: "#f472b6", pala3: "#a3e635", pala4: "#c084fc", bola: "#fde047", texto: "#e8eef7", tenue: "#5b6b87", acento: "#22d3ee" },
   { nombre: "Retro", fondo: "#000000", campo: "#04140a", borde: "#0f3d22", linea: "#124d1f",
-    pala1: "#39ff14", pala2: "#ffb000", pala3: "#00e5ff", bola: "#b6ff9e", texto: "#39ff14", tenue: "#1c6b2c", acento: "#39ff14" },
+    pala1: "#39ff14", pala2: "#ffb000", pala3: "#00e5ff", pala4: "#ff2079", bola: "#b6ff9e", texto: "#39ff14", tenue: "#1c6b2c", acento: "#39ff14" },
   { nombre: "Clasico", fondo: "#000000", campo: "#000000", borde: "#3a3a3a", linea: "#4a4a4a",
-    pala1: "#ffffff", pala2: "#f87171", pala3: "#60a5fa", bola: "#ffffff", texto: "#ffffff", tenue: "#6e6e6e", acento: "#ffffff" },
+    pala1: "#ffffff", pala2: "#f87171", pala3: "#60a5fa", pala4: "#facc15", bola: "#ffffff", texto: "#ffffff", tenue: "#6e6e6e", acento: "#ffffff" },
   { nombre: "Atardecer", fondo: "#160b22", campo: "#241036", borde: "#4a2065", linea: "#5b2a7a",
-    pala1: "#ff9e57", pala2: "#ff5c8a", pala3: "#c084fc", bola: "#ffe066", texto: "#f7e9ff", tenue: "#8b6ba8", acento: "#ff9e57" },
+    pala1: "#ff9e57", pala2: "#ff5c8a", pala3: "#c084fc", pala4: "#2dd4bf", bola: "#ffe066", texto: "#f7e9ff", tenue: "#8b6ba8", acento: "#ff9e57" },
   { nombre: "Oceano", fondo: "#02121a", campo: "#062a3a", borde: "#0d4f66", linea: "#12657f",
-    pala1: "#7dd3fc", pala2: "#5eead4", pala3: "#a78bfa", bola: "#f0fdfa", texto: "#dff6ff", tenue: "#4a8ba3", acento: "#5eead4" },
+    pala1: "#7dd3fc", pala2: "#5eead4", pala3: "#a78bfa", pala4: "#fb7185", bola: "#f0fdfa", texto: "#dff6ff", tenue: "#4a8ba3", acento: "#5eead4" },
   { nombre: "Papel", fondo: "#e8e2d4", campo: "#f5f1e8", borde: "#c9c0ac", linea: "#cfc6b2",
-    pala1: "#c2410c", pala2: "#1d4ed8", pala3: "#15803d", bola: "#1c1917", texto: "#292524", tenue: "#a8a29e", acento: "#c2410c" },
+    pala1: "#c2410c", pala2: "#1d4ed8", pala3: "#15803d", pala4: "#7c3aed", bola: "#1c1917", texto: "#292524", tenue: "#a8a29e", acento: "#c2410c" },
 ];
 
 function mezclar(colorA, colorB, t) {
@@ -67,6 +67,7 @@ function resolverColorEvento(color) {
   if (color === "pala1") return t.pala1;
   if (color === "pala2") return t.pala2;
   if (color === "pala3") return t.pala3;
+  if (color === "pala4") return t.pala4;
   if (color === "bola") return t.bola;
   if (color === "acento") return t.acento;
   return t.texto;
@@ -111,6 +112,8 @@ let geometria = {
   campo: { ancho: 800, alto: 800 },
   vertices: null,
   bordes: null,
+  jugador_bordes: null,
+  cantidad_jugadores: null,
   pala: { largo: 82, grosor: 12 },
   bola: { tam: 12 },
   poder_tam: 20,
@@ -119,6 +122,16 @@ let geometria = {
 
 let miNumero = null;
 let ultimoEstado = null;
+
+// --- UI del lobby (eleccion de cantidad de jugadores) ---------------------
+const lobbyOpciones = document.getElementById("lobby-opciones");
+const botonesCantidad = Array.from(document.querySelectorAll(".btn-cantidad"));
+botonesCantidad.forEach((boton) => {
+  boton.addEventListener("click", () => {
+    if (boton.disabled) return;
+    enviarMensaje({ type: "elegir_cantidad", cantidad: Number(boton.dataset.cantidad) });
+  });
+});
 
 const protocolo = location.protocol === "https:" ? "wss:" : "ws:";
 const socket = new WebSocket(`${protocolo}//${location.host}/ws`);
@@ -141,15 +154,38 @@ socket.addEventListener("error", () => mostrarMensaje("No se pudo conectar al se
 socket.addEventListener("message", (evento) => {
   const mensaje = JSON.parse(evento.data);
   switch (mensaje.type) {
+    case "elegir": {
+      lobbyOpciones.classList.remove("oculto");
+      botonesCantidad.forEach((boton) => {
+        const cantidad = Number(boton.dataset.cantidad);
+        boton.disabled = mensaje.conectados < cantidad;
+        boton.classList.toggle("activo", mensaje.cantidad_elegida === cantidad);
+      });
+      mostrarMensaje(
+        mensaje.cantidad_elegida
+          ? `Sos el anfitrion. Conectados: ${mensaje.conectados}. Esperando a ${mensaje.cantidad_elegida} jugadores.`
+          : `Sos el anfitrion. Conectados: ${mensaje.conectados}. Elegi cuantos van a jugar.`
+      );
+      break;
+    }
+
     case "esperando":
-      mostrarMensaje(`Esperando jugadores... (${mensaje.conectados}/${mensaje.necesarios})`);
+      lobbyOpciones.classList.add("oculto");
+      mostrarMensaje(
+        mensaje.cantidad_elegida
+          ? `Conectados: ${mensaje.conectados}. El anfitrion eligio ${mensaje.cantidad_elegida} jugadores.`
+          : `Conectados: ${mensaje.conectados}. Esperando a que el anfitrion elija cuantos van a jugar.`
+      );
       break;
 
     case "inicio":
+      lobbyOpciones.classList.add("oculto");
       geometria = {
         campo: mensaje.campo,
         vertices: mensaje.vertices,
         bordes: mensaje.bordes,
+        jugador_bordes: mensaje.jugador_bordes,
+        cantidad_jugadores: mensaje.cantidad_jugadores,
         pala: mensaje.pala,
         bola: mensaje.bola,
         poder_tam: mensaje.poder_tam,
@@ -410,8 +446,9 @@ function dibujarCampo() {
   ctx.fillStyle = t.campo;
   ctx.beginPath();
   ctx.moveTo(geometria.vertices[0][0], geometria.vertices[0][1]);
-  ctx.lineTo(geometria.vertices[1][0], geometria.vertices[1][1]);
-  ctx.lineTo(geometria.vertices[2][0], geometria.vertices[2][1]);
+  for (let i = 1; i < geometria.vertices.length; i++) {
+    ctx.lineTo(geometria.vertices[i][0], geometria.vertices[i][1]);
+  }
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = t.borde;
@@ -424,8 +461,8 @@ function dibujarCampo() {
   ctx.fill();
 }
 
-function dibujarPalaTriangular(indice, estadoPala, colorTema) {
-  const borde = geometria.bordes[indice];
+function dibujarPalaTriangular(indiceBorde, indiceJugador, estadoPala, colorTema) {
+  const borde = geometria.bordes[indiceBorde];
   const t = temaActual();
   const grosor = geometria.pala.grosor;
   const color = estadoPala.eliminado ? mezclar(t.tenue, t.campo, 0.25) : colorTema;
@@ -434,7 +471,7 @@ function dibujarPalaTriangular(indice, estadoPala, colorTema) {
   ctx.translate(estadoPala.x, estadoPala.y);
   ctx.rotate(borde.angulo);
   rectConBrillo(-estadoPala.largo / 2, -grosor / 2, estadoPala.largo, grosor, color);
-  if (miNumero === indice + 1 && !estadoPala.eliminado) {
+  if (miNumero === indiceJugador + 1 && !estadoPala.eliminado) {
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
     ctx.strokeRect(-estadoPala.largo / 2 - 2, -grosor / 2 - 2, estadoPala.largo + 4, grosor + 4);
@@ -565,7 +602,8 @@ function dibujar() {
   }
 
   const t = temaActual();
-  const coloresPala = [t.pala1, t.pala2, t.pala3];
+  const coloresPala = [t.pala1, t.pala2, t.pala3, t.pala4];
+  const cantidadJugadores = geometria.cantidad_jugadores || ultimoEstado.palas.length;
 
   dibujarObstaculos();
   if (ajustes.particulas) dibujarParticulas();
@@ -574,11 +612,13 @@ function dibujar() {
     dibujarPoder(poder);
   }
 
-  for (let i = 0; i < 3; i++) {
-    dibujarPalaTriangular(i, ultimoEstado.palas[i], coloresPala[i]);
+  for (let i = 0; i < cantidadJugadores; i++) {
+    const indiceBorde = geometria.jugador_bordes[i];
+    dibujarPalaTriangular(indiceBorde, i, ultimoEstado.palas[i], coloresPala[i]);
   }
-  for (let i = 0; i < 3; i++) {
-    dibujarInfoJugador(i, coloresPala[i], ultimoEstado.vidas[i], ultimoEstado.empujon[i], ultimoEstado.palas[i].eliminado);
+  for (let i = 0; i < cantidadJugadores; i++) {
+    const indiceBorde = geometria.jugador_bordes[i];
+    dibujarInfoJugador(indiceBorde, coloresPala[i], ultimoEstado.vidas[i], ultimoEstado.empujon[i], ultimoEstado.palas[i].eliminado);
   }
 
   if (!ultimoEstado.terminada) {

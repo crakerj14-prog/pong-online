@@ -1,25 +1,32 @@
-"""Servidor autoritativo de Pong triangular, 3 jugadores.
+"""Servidor autoritativo de Pong multijugador: 2, 3 o 4 jugadores, elegido
+por el anfitrion (el primero en conectarse a cada lobby) antes de arrancar.
 
-Un solo proceso hace dos cosas:
+Un solo proceso hace tres cosas:
   1. Sirve los archivos estaticos del cliente (client/index.html, client.js,
      style.css) por HTTP.
-  2. Acepta conexiones WebSocket en /ws, empareja de a tres, y corre el loop
-     de juego para cada partida a 60 cuadros por segundo.
+  2. Junta gente en un "lobby" (sala de espera) hasta que el anfitrion elige
+     cuantos van a jugar y hay suficientes conectados para esa cantidad.
+  3. Corre el loop de juego de cada partida a 60 cuadros por segundo.
 
-El campo es un triangulo: cada jugador defiende un borde. Si se le escapa
-la bola por una parte que su pala no cubre, pierde una vida; a las 0 vidas
-su borde se convierte en pared fija (sigue rebotando la bola, pero ya no
-hay nada que perder ahi). Gana el ultimo jugador con vidas.
+El campo cambia de forma segun la cantidad de jugadores (ver geometria.py):
+rectangulo clasico para 2 (arriba/abajo son paredes fijas desde el
+arranque), triangulo para 3, cuadrado para 4. En los tres casos, cada
+jugador defiende un lado; si se le escapa la bola por una parte que su pala
+no cubre, pierde una vida, y a las 0 su lado se convierte en pared fija
+(sigue rebotando la bola, pero ya no hay nada que perder ahi). Gana el
+ultimo jugador con vidas. Poderes, empujon/impulso, obstaculos y multibola
+funcionan igual en los tres modos: son todos parte de la misma fisica
+generica de "bola contra un borde con o sin pala asignada".
 
 Puede haber varias bolas en juego a la vez (poder "multibola") y varios
 poderes esperando en el campo al mismo tiempo. Cuando se pierde una vida,
 sea cual sea la bola que se escapo, se limpia todo y se vuelve a sacar con
-una sola bola -- asi el estado nunca queda a medio camino entre "una bola
-menos" y "sigue habiendo dos".
+una sola bola.
 
 Los clientes nunca calculan fisica: mandan input (teclado, mouse, el
-disparo del empujon) y reciben el estado completo en cada cuadro, mas una
-lista de "eventos" puntuales para particulas/sonido. Ver PROTOCOLO.md.
+disparo del empujon, la eleccion de cantidad de jugadores) y reciben el
+estado completo en cada cuadro, mas una lista de "eventos" puntuales para
+particulas/sonido. Ver PROTOCOLO.md.
 
 Ejecutar con:  uvicorn main:app --reload
 """
@@ -56,6 +63,11 @@ def _rotar(vx, vy, angulo):
     return vx * cos_a - vy * sin_a, vx * sin_a + vy * cos_a
 
 
+def _otro_jugador_al_azar(cantidad_jugadores, menos_este):
+    otros = [n for n in range(cantidad_jugadores) if n != menos_este]
+    return random.choice(otros)
+
+
 class Jugador:
     """Un extremo de la conexion: el WebSocket y el input que va mandando."""
 
@@ -66,8 +78,8 @@ class Jugador:
         self.mouse_x = None
         self.mouse_y = None
         self.modo_control = "teclado"  # o "mouse": gana el que se uso mas reciente
-        self.partida = None            # se asigna al emparejar
-        self.numero = None             # 1, 2 o 3, se asigna al emparejar
+        self.partida = None            # se asigna al arrancar la partida
+        self.numero = None             # 1..4, se asigna al arrancar (protocolo: 1-based)
 
     @property
     def direccion(self):
@@ -78,9 +90,8 @@ class Jugador:
 
 class Obstaculo:
     """Bloque que rebota solo en un cuadrado central. Se comporta como una
-    pala inmovil para colisiones.resolver_pala (mismo truco que en la
-    version de 2 jugadores): nadie la controla, nunca le imprime efecto a
-    la bola."""
+    pala inmovil para colisiones.resolver_pala: nadie la controla, nunca le
+    imprime efecto a la bola."""
 
     def __init__(self, x, y, ancho, alto, vx, vy):
         self.x = x
@@ -131,27 +142,49 @@ def _crear_obstaculos():
 
 
 class Partida:
-    """Una partida entre 3 jugadores: el estado y el loop de fisica."""
+    """Una partida entre 2, 3 o 4 jugadores: el estado y el loop de fisica.
+
+    Distingue "indice de borde" (0..cantidad_de_lados-1, donde
+    cantidad_de_lados puede ser mayor a la cantidad de jugadores: el
+    rectangulo de 2 jugadores tiene 4 lados) de "indice de jugador"
+    (0-based, 0..cantidad_jugadores-1). `self.palas` y `self.jugador_de_borde`
+    estan indexados por borde; casi todo lo demas (vidas, eliminado,
+    palas_jugador, empujones_jugador) esta indexado por jugador.
+    """
 
     def __init__(self, jugadores):
-        self.jugadores = jugadores  # lista de 3 Jugador, indice 0/1/2 = numero 1/2/3
-        self.palas = [PalaBorde(borde) for borde in geometria.BORDES]
+        self.jugadores = jugadores
+        cantidad = len(jugadores)
+        self.vertices, self.bordes, self.mapeo_jugador_a_borde = geometria.construir(cantidad)
+
+        total_bordes = len(self.bordes)
+        self.palas = [None] * total_bordes            # indexado por borde; None = pared fija de entrada
+        self.jugador_de_borde = [None] * total_bordes  # indice de borde -> indice de jugador, o None
+
+        for indice_jugador, indice_borde in self.mapeo_jugador_a_borde.items():
+            self.palas[indice_borde] = PalaBorde(self.bordes[indice_borde])
+            self.jugador_de_borde[indice_borde] = indice_jugador
+
+        # Vistas indexadas por jugador, para todo lo que piensa "por
+        # jugador" en vez de "por borde" (Poderes, empujones, vidas...).
+        self.palas_jugador = [self.palas[self.mapeo_jugador_a_borde[i]] for i in range(cantidad)]
+
         self.bolas = [Bola()]
         self.obstaculos = _crear_obstaculos()
-        self.poderes = Poderes(self.palas)
-        self.empujones = [Empujon(pala) for pala in self.palas]
+        self.poderes = Poderes(self.palas_jugador)
+        self.empujones_jugador = [Empujon(pala) for pala in self.palas_jugador]
         self.impulso = Impulso()
         self.impulso_bola = None  # a cual de self.bolas le esta aplicando el impulso ahora
         self.eventos = []
 
-        self.vidas = [cfg.VIDAS_INICIALES] * 3
-        self.eliminado = [False, False, False]
-        self.ultimo_en_golpear = None  # numero 1/2/3, o None
+        self.vidas = [cfg.VIDAS_INICIALES] * cantidad
+        self.eliminado = [False] * cantidad
+        self.indice_ultimo_en_golpear = None  # indice de jugador (0-based), o None
 
         self.espera_saque = 0
         self.terminada = False
         self.ganador = None
-        self.activa = True
+        self.activa = True  # se apaga cuando alguien se desconecta
         self._sacar()
 
     # --- Ciclo de partida ------------------------------------------------
@@ -171,22 +204,23 @@ class Partida:
         self.espera_saque = cfg.FRAMES_SAQUE
         self.impulso.cancelar()
         self.impulso_bola = None
-        self.ultimo_en_golpear = None
+        self.indice_ultimo_en_golpear = None
 
-    def activar_empujon(self, numero_jugador):
-        empujon = self.empujones[numero_jugador - 1]
+    def activar_empujon(self, indice_jugador):
+        empujon = self.empujones_jugador[indice_jugador]
         if empujon.activar():
             self._evento_sonido(200, 40)
 
     # --- Bucle de fisica ---------------------------------------------------
     def actualizar(self):
-        for indice, jugador in enumerate(self.jugadores):
-            if self.eliminado[indice]:
+        for indice_jugador, jugador in enumerate(self.jugadores):
+            if self.eliminado[indice_jugador]:
                 continue
-            self._mover_jugador(self.palas[indice], jugador)
-            self.palas[indice].actualizar_efecto()
-            self.palas[indice].actualizar_paralisis()
-            self.empujones[indice].actualizar()
+            pala = self.palas_jugador[indice_jugador]
+            self._mover_jugador(pala, jugador)
+            pala.actualizar_efecto()
+            pala.actualizar_paralisis()
+            self.empujones_jugador[indice_jugador].actualizar()
 
         self.poderes.actualizar_spawn(habilitado=True)
 
@@ -202,8 +236,7 @@ class Partida:
             self.impulso.actualizar(self.impulso_bola)
         elif self.impulso.activo:
             # La bola que tenia el impulso ya no esta en juego (se perdio una
-            # vida y se reseteo todo): se cancela prolijo en vez de quedar
-            # con un color/temporizador que ya no describe nada real.
+            # vida y se reseteo todo): se cancela prolijo.
             self.impulso.cancelar()
             self.impulso_bola = None
 
@@ -231,23 +264,29 @@ class Partida:
         bola.x += bola.vx
         bola.y += bola.vy
 
-        for indice, borde in enumerate(geometria.BORDES):
-            pala = None if self.eliminado[indice] else self.palas[indice]
-            resultado = colisiones_triangulo.procesar_borde(bola, borde, pala, self.eliminado[indice])
+        for indice_borde, borde in enumerate(self.bordes):
+            indice_jugador = self.jugador_de_borde[indice_borde]
+            # Pared fija: o nunca tuvo jugador (arriba/abajo del rectangulo
+            # de 2), o el jugador dueño ya fue eliminado.
+            es_pared_fija = indice_jugador is None or self.eliminado[indice_jugador]
+            pala = None if es_pared_fija else self.palas[indice_borde]
+
+            resultado = colisiones_triangulo.procesar_borde(bola, borde, pala, es_pared_fija)
             if resultado is None:
                 continue
 
             if resultado["tipo"] == "perdida":
-                self._perder_vida(indice)
+                self._perder_vida(indice_jugador)
                 return
 
-            color_pala = f"pala{indice + 1}"
+            color_pala = f"pala{indice_jugador + 1}" if indice_jugador is not None else "bola"
             self._evento_particulas(bola.centro_x, bola.centro_y, color_pala, 14)
             self._evento_sonido(int(480 + resultado["rapidez"] * 22), 20)
 
-            if not self.eliminado[indice]:
-                self.ultimo_en_golpear = indice + 1
-                if self.palas[indice].dash_activo:
+            if indice_jugador is not None and not self.eliminado[indice_jugador]:
+                self.indice_ultimo_en_golpear = indice_jugador
+                pala_golpeada = self.palas[indice_borde]
+                if pala_golpeada.dash_activo:
                     self.impulso.activar(bola, cfg.IMPULSO_COLOR)
                     self.impulso_bola = bola
                     self._evento_particulas(bola.centro_x, bola.centro_y, cfg.IMPULSO_COLOR, 26)
@@ -269,7 +308,7 @@ class Partida:
                 self._evento_sonido(300, 15)
                 break
 
-            resultado_poder = self.poderes.recoger_si_toca(bola, self.ultimo_en_golpear)
+            resultado_poder = self.poderes.recoger_si_toca(bola, self.indice_ultimo_en_golpear)
             if resultado_poder is not None:
                 self._evento_particulas(bola.centro_x, bola.centro_y, resultado_poder["color"], 22)
                 self._evento_sonido(700, 45)
@@ -277,16 +316,17 @@ class Partida:
 
     def _perder_vida(self, indice_jugador):
         self.vidas[indice_jugador] -= 1
-        borde = geometria.BORDES[indice_jugador]
+        indice_borde = self.mapeo_jugador_a_borde[indice_jugador]
+        borde = self.bordes[indice_borde]
         centro_borde = borde.punto(borde.longitud / 2)
         self._evento_particulas(centro_borde[0], centro_borde[1], "acento", 26)
         self._evento_sonido(180, 90)
 
         if self.vidas[indice_jugador] <= 0:
             self.eliminado[indice_jugador] = True
-            self.palas[indice_jugador].offset_normal = 0.0
+            self.palas[indice_borde].offset_normal = 0.0
 
-        vivos = [n for n in range(3) if not self.eliminado[n]]
+        vivos = [n for n in range(len(self.jugadores)) if not self.eliminado[n]]
         if len(vivos) <= 1:
             self.terminada = True
             self.ganador = vivos[0] + 1 if vivos else None
@@ -299,19 +339,19 @@ class Partida:
         """"crecer"/"encoger"/"veloz"/"lenta" ya los aplico
         Poderes.recoger_si_toca; estos tres necesitan la lista de bolas o de
         empujones, que ese objeto no tiene."""
-        if self.ultimo_en_golpear is None:
+        if self.indice_ultimo_en_golpear is None:
             return
+        indice = self.indice_ultimo_en_golpear
 
         if info["tipo"] == "multibola":
             self._crear_bolas_extra(bola)
         elif info["tipo"] == "empujon_libre":
             duracion_frames = int(info["duracion"] * cfg.FPS)
-            self.empujones[self.ultimo_en_golpear - 1].activar_sin_cooldown(duracion_frames)
+            self.empujones_jugador[indice].activar_sin_cooldown(duracion_frames)
         elif info["tipo"] == "paralisis":
-            otros = [n for n in (1, 2, 3) if n != self.ultimo_en_golpear]
-            objetivo = random.choice(otros)
+            objetivo = _otro_jugador_al_azar(len(self.jugadores), indice)
             duracion_frames = int(info["duracion"] * cfg.FPS)
-            self.palas[objetivo - 1].aplicar_paralisis(cfg.PARALISIS_MULTIPLICADOR, duracion_frames)
+            self.palas_jugador[objetivo].aplicar_paralisis(cfg.PARALISIS_MULTIPLICADOR, duracion_frames)
             # Ralentiza la bola a la vez: le da una chance real al paralizado
             # en vez de solo dejarlo mirando (ver notas de diseño del poder).
             self._escalar_bola(bola, cfg.PODER_FACTOR_LENTA)
@@ -341,8 +381,8 @@ class Partida:
     # --- Eventos puntuales (particulas/sonido) ------------------------------
     def _evento_particulas(self, x, y, color, cantidad):
         """`color` es un hex fijo ("#rrggbb") o una clave de tema
-        ("pala1"/"pala2"/"pala3"/"acento") que el cliente resuelve contra su
-        propia paleta local."""
+        ("pala1".."pala4", "bola", "acento") que el cliente resuelve contra
+        su propia paleta local."""
         self.eventos.append({
             "tipo": "particulas", "x": round(x, 1), "y": round(y, 1),
             "color": color, "cantidad": cantidad,
@@ -362,12 +402,13 @@ class Partida:
         ]
 
         palas_json = []
-        for indice, pala in enumerate(self.palas):
+        for indice_jugador in range(len(self.jugadores)):
+            pala = self.palas_jugador[indice_jugador]
             cx, cy = pala.centro_mundo()
             palas_json.append({
                 "x": round(cx, 1), "y": round(cy, 1),
                 "largo": round(pala.largo, 1),
-                "eliminado": self.eliminado[indice],
+                "eliminado": self.eliminado[indice_jugador],
             })
 
         mensaje = {
@@ -384,7 +425,7 @@ class Partida:
             "terminada": self.terminada,
             "ganador": self.ganador,
             "poderes": poderes_json,
-            "empujon": [round(e.proporcion_espera, 2) for e in self.empujones],
+            "empujon": [round(e.proporcion_espera, 2) for e in self.empujones_jugador],
             "impulso_color": self.impulso.color,
             "eventos": self.eventos,
         }
@@ -393,7 +434,7 @@ class Partida:
 
 
 async def bucle_partida(partida: Partida):
-    """Tick fijo a cfg.FPS por segundo: fisica + broadcast a los 3 jugadores."""
+    """Tick fijo a cfg.FPS por segundo: fisica + broadcast a todos los jugadores."""
     intervalo = 1 / cfg.FPS
     while partida.activa:
         partida.actualizar()
@@ -408,61 +449,137 @@ async def bucle_partida(partida: Partida):
         await asyncio.sleep(intervalo)
 
 
-# Jugadores esperando para completar un trio. Como mucho 2 en espera: en
-# cuanto llega el tercero, se arma la partida y la lista queda vacia.
-esperando: list = []
-lock_emparejar = asyncio.Lock()
+class Lobby:
+    """Gente esperando armar partida. El primero en conectarse es el
+    anfitrion: el unico que puede elegir cuantos van a jugar (2 a 4). En
+    cuanto hay suficientes conectados para la cantidad elegida, arranca."""
+
+    def __init__(self, primer_jugador):
+        self.jugadores = [primer_jugador]
+        self.cantidad_elegida = None
+
+    @property
+    def anfitrion(self):
+        return self.jugadores[0] if self.jugadores else None
+
+    def agregar(self, jugador):
+        self.jugadores.append(jugador)
+
+    def quitar(self, jugador):
+        """Si `jugador` era el anfitrion, el siguiente en la fila pasa a
+        serlo y se resetea la eleccion (para que decida de nuevo: no
+        heredar una cantidad que nunca eligio)."""
+        era_anfitrion = self.jugadores and jugador is self.jugadores[0]
+        self.jugadores.remove(jugador)
+        if era_anfitrion:
+            self.cantidad_elegida = None
+
+    @property
+    def lista_para_arrancar(self):
+        return self.cantidad_elegida is not None and len(self.jugadores) >= self.cantidad_elegida
+
+    def tomar_jugadores(self):
+        """Saca del lobby a los primeros `cantidad_elegida` (los que
+        arrancan la partida); los que sobran quedan para el siguiente."""
+        n = self.cantidad_elegida
+        elegidos, self.jugadores = self.jugadores[:n], self.jugadores[n:]
+        self.cantidad_elegida = None
+        return elegidos
+
+
+async def _avisar_estado_lobby(lobby_actual: Lobby):
+    conectados = len(lobby_actual.jugadores)
+    for indice, jugador in enumerate(lobby_actual.jugadores):
+        if indice == 0:
+            mensaje = {
+                "type": "elegir",
+                "conectados": conectados,
+                "opciones": list(cfg.CANTIDADES_JUGADORES_POSIBLES),
+                "cantidad_elegida": lobby_actual.cantidad_elegida,
+            }
+        else:
+            mensaje = {
+                "type": "esperando",
+                "conectados": conectados,
+                "cantidad_elegida": lobby_actual.cantidad_elegida,
+            }
+        try:
+            await jugador.ws.send_json(mensaje)
+        except Exception:
+            pass  # se entera por su propio receive_json() si se desconecto
+
+
+async def _arrancar_partida(grupo):
+    for indice, j in enumerate(grupo):
+        j.numero = indice + 1
+    partida = Partida(grupo)
+    for j in grupo:
+        j.partida = partida
+
+    base_inicio = {
+        "campo": {"ancho": cfg.ANCHO, "alto": cfg.ALTO},
+        "vertices": [list(v) for v in partida.vertices],
+        "bordes": [
+            {"a": list(b.a), "b": list(b.b), "angulo": b.angulo}
+            for b in partida.bordes
+        ],
+        # jugador_bordes[i] = indice de borde del jugador i (0-based): con 2
+        # jugadores no coincide con el indice del jugador (el rectangulo
+        # tiene 4 bordes, solo 2 son de jugador).
+        "jugador_bordes": [partida.mapeo_jugador_a_borde[i] for i in range(len(grupo))],
+        "pala": {"largo": cfg.PALA_LARGO, "grosor": cfg.PALA_GROSOR},
+        "bola": {"tam": cfg.BOLA_TAM},
+        "poder_tam": cfg.PODER_TAM,
+        "vidas_iniciales": cfg.VIDAS_INICIALES,
+        "cantidad_jugadores": len(grupo),
+    }
+    for j in grupo:
+        await j.ws.send_json({"type": "inicio", "numero": j.numero, **base_inicio})
+
+    asyncio.create_task(bucle_partida(partida))
+
+
+lobby: Lobby | None = None
+lock_lobby = asyncio.Lock()
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    global esperando
+    global lobby
     await ws.accept()
     jugador = Jugador(ws)
 
-    async with lock_emparejar:
-        esperando.append(jugador)
-        if len(esperando) < 3:
-            grupo = None
+    async with lock_lobby:
+        if lobby is None:
+            lobby = Lobby(jugador)
         else:
-            grupo = esperando[:3]
-            esperando = esperando[3:]
+            lobby.agregar(jugador)
+        await _avisar_estado_lobby(lobby)
 
-    if grupo is None:
-        await ws.send_json({
-            "type": "esperando",
-            "conectados": len(esperando),
-            "necesarios": 3,
-        })
-    else:
-        for indice, j in enumerate(grupo):
-            j.numero = indice + 1
-        partida = Partida(grupo)
-        for j in grupo:
-            j.partida = partida
-
-        base_inicio = {
-            "campo": {"ancho": cfg.ANCHO, "alto": cfg.ALTO},
-            "vertices": [list(v) for v in geometria.VERTICES],
-            "bordes": [
-                {"a": list(b.a), "b": list(b.b), "angulo": b.angulo}
-                for b in geometria.BORDES
-            ],
-            "pala": {"largo": cfg.PALA_LARGO, "grosor": cfg.PALA_GROSOR},
-            "bola": {"tam": cfg.BOLA_TAM},
-            "poder_tam": cfg.PODER_TAM,
-            "vidas_iniciales": cfg.VIDAS_INICIALES,
-        }
-        for j in grupo:
-            await j.ws.send_json({"type": "inicio", "numero": j.numero, **base_inicio})
-
-        asyncio.create_task(bucle_partida(partida))
+        if lobby.lista_para_arrancar:
+            grupo = lobby.tomar_jugadores()
+            if not lobby.jugadores:
+                lobby = None
+            await _arrancar_partida(grupo)
 
     try:
         while True:
             mensaje = await ws.receive_json()
             tipo = mensaje.get("type")
-            if tipo == "input":
+
+            if tipo == "elegir_cantidad":
+                async with lock_lobby:
+                    if lobby is not None and jugador is lobby.anfitrion:
+                        cantidad = mensaje.get("cantidad")
+                        if cantidad in cfg.CANTIDADES_JUGADORES_POSIBLES:
+                            lobby.cantidad_elegida = cantidad
+                            await _avisar_estado_lobby(lobby)
+                            if lobby.lista_para_arrancar:
+                                grupo = lobby.tomar_jugadores()
+                                if not lobby.jugadores:
+                                    lobby = None
+                                await _arrancar_partida(grupo)
+            elif tipo == "input":
                 tecla = mensaje.get("tecla")
                 presionada = bool(mensaje.get("presionada"))
                 if tecla == "arriba":
@@ -478,13 +595,17 @@ async def websocket_endpoint(ws: WebSocket):
                     jugador.modo_control = "mouse"
             elif tipo == "accion":
                 if mensaje.get("accion") == "empujon" and jugador.partida is not None:
-                    jugador.partida.activar_empujon(jugador.numero)
+                    jugador.partida.activar_empujon(jugador.numero - 1)
     except WebSocketDisconnect:
         pass
     finally:
-        async with lock_emparejar:
-            if jugador in esperando:
-                esperando.remove(jugador)
+        async with lock_lobby:
+            if lobby is not None and jugador in lobby.jugadores:
+                lobby.quitar(jugador)
+                if not lobby.jugadores:
+                    lobby = None
+                else:
+                    await _avisar_estado_lobby(lobby)
 
         if jugador.partida is not None:
             jugador.partida.activa = False

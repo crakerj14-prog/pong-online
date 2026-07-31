@@ -3,9 +3,11 @@ al tocarlos. Pueden convivir varios en el campo a la vez (hasta
 PODER_MAX_SIMULTANEOS): el temporizador de aparicion se reprograma solo cada
 vez que expira, sin importar si el anterior se agarro o no.
 
-Con 3 palas no se puede inferir "quien la toco por ultima vez" del signo de
-la velocidad (como hacia la version de 2 jugadores): el llamador tiene que
-pasarlo explicitamente.
+No se puede inferir "quien la toco por ultima vez" de la velocidad de la
+bola (eso solo funcionaba con exactamente 2 palas, una a cada lado): el
+llamador tiene que pasarlo explicitamente. Los indices de jugador son
+0-based en todo este modulo (jugador 0 es el "jugador 1" de cara al
+protocolo, etc), para que coincidan directo con listas como `palas`.
 
 Este modulo resuelve el efecto de "crecer"/"encoger"/"veloz"/"lenta" (solo
 necesitan las palas). "multibola"/"empujon_libre"/"paralisis" necesitan
@@ -20,9 +22,10 @@ import geometria
 
 
 class Poderes:
-    def __init__(self, palas):
-        self.palas = palas  # lista de 3 PalaBorde, indice 0/1/2 = jugador 1/2/3
-        self.activos = []   # poderes esperando en el campo (puede haber varios)
+    def __init__(self, palas_por_jugador):
+        self.palas = palas_por_jugador  # lista indexada por jugador (0-based)
+        self.cantidad_jugadores = len(palas_por_jugador)
+        self.activos = []  # poderes esperando en el campo (puede haber varios)
         self.frames_restantes = self._nuevo_intervalo()
 
     def reiniciar(self):
@@ -59,13 +62,12 @@ class Poderes:
         x, y, r = info["x"], info["y"], cfg.PODER_TAM / 2
         return x - r, y - r, x + r, y + r
 
-    def recoger_si_toca(self, bola, ultimo_en_golpear):
-        """`ultimo_en_golpear` es el numero (1, 2 o 3) de quien toco la bola
-        por ultima vez, o None si nadie la toco todavia en esta jugada.
+    def recoger_si_toca(self, bola, indice_ultimo_en_golpear):
+        """`indice_ultimo_en_golpear` es el indice (0-based) de quien toco la
+        bola por ultima vez, o None si nadie la toco todavia en esta jugada.
 
-        Revisa el poder mas cercano a haber sido tocado primero (el orden en
-        que se generaron); a lo sumo agarra uno por cuadro por bola, para no
-        darle dos efectos de golpe si llegaran a superponerse."""
+        A lo sumo agarra un poder por cuadro por bola, para no darle dos
+        efectos de golpe si llegaran a superponerse."""
         bx1, by1, bx2, by2 = bola.caja()
         for info in self.activos:
             x1, y1, x2, y2 = self._caja(info)
@@ -74,14 +76,13 @@ class Poderes:
 
             self.activos.remove(info)
 
-            if ultimo_en_golpear is not None:
+            if indice_ultimo_en_golpear is not None:
                 duracion_frames = int(info["duracion"] * cfg.FPS)
                 if info["tipo"] == "crecer":
-                    self.palas[ultimo_en_golpear - 1].aplicar_efecto(cfg.PODER_FACTOR_CRECER, duracion_frames)
+                    self.palas[indice_ultimo_en_golpear].aplicar_efecto(cfg.PODER_FACTOR_CRECER, duracion_frames)
                 elif info["tipo"] == "encoger":
-                    otros = [n for n in (1, 2, 3) if n != ultimo_en_golpear]
-                    objetivo = random.choice(otros)
-                    self.palas[objetivo - 1].aplicar_efecto(cfg.PODER_FACTOR_ENCOGER, duracion_frames)
+                    objetivo = self._otro_jugador_al_azar(indice_ultimo_en_golpear)
+                    self.palas[objetivo].aplicar_efecto(cfg.PODER_FACTOR_ENCOGER, duracion_frames)
                 elif info["tipo"] == "veloz":
                     self._escalar_bola(bola, cfg.PODER_FACTOR_VELOZ)
                 elif info["tipo"] == "lenta":
@@ -92,6 +93,10 @@ class Poderes:
             return info
 
         return None
+
+    def _otro_jugador_al_azar(self, menos_este):
+        otros = [n for n in range(self.cantidad_jugadores) if n != menos_este]
+        return random.choice(otros)
 
     @staticmethod
     def _escalar_bola(bola, factor):

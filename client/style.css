@@ -58,6 +58,44 @@ h1 .etiqueta {
   color: var(--bola);
 }
 
+.lobby-opciones {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--tenue);
+}
+
+.lobby-opciones.oculto {
+  display: none;
+}
+
+.btn-cantidad {
+  min-width: 34px;
+  padding: 4px 10px;
+  background: var(--campo);
+  color: var(--texto);
+  border: 1px solid var(--borde);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn-cantidad:hover:not(:disabled) {
+  border-color: var(--acento);
+}
+
+.btn-cantidad.activo {
+  background: var(--acento);
+  color: var(--fondo);
+  border-color: var(--acento);
+}
+
+.btn-cantidad:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 canvas {
   background: var(--campo);
   border: 2px solid var(--borde);

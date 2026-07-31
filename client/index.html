@@ -7,9 +7,16 @@
 </head>
 <body>
   <main>
-    <h1>PONG EU PIBES <span class="etiqueta">triangular · 3 jugadores</span></h1>
+    <h1>PONG EU PIBES <span class="etiqueta">2 a 4 jugadores</span></h1>
 
     <div id="mensaje" class="mensaje">Conectando...</div>
+
+    <div id="lobby-opciones" class="lobby-opciones oculto">
+      <span>Elegi cuantos van a jugar:</span>
+      <button type="button" class="btn-cantidad" data-cantidad="2">2</button>
+      <button type="button" class="btn-cantidad" data-cantidad="3">3</button>
+      <button type="button" class="btn-cantidad" data-cantidad="4">4</button>
+    </div>
 
     <canvas id="campo" width="800" height="800"></canvas>
 
@@ -17,7 +24,9 @@
       Flecha arriba/abajo o el <strong>mouse</strong> para mover tu pala a lo
       largo de tu borde. <strong>Shift</strong> para el empujon. Si se te
       escapa la pelota por donde tu pala no llega, perdes una vida — a la
-      tercera tu borde queda como pared fija. Gana el ultimo con vidas.
+      tercera tu borde queda como pared fija. Gana el ultimo con vidas. El
+      campo es un rectangulo con 2 jugadores, un triangulo con 3 y un
+      cuadrado con 4.
     </p>
 
     <details id="ajustes">

@@ -3,8 +3,8 @@
 ## Antes de elegir donde alojarlo, esto importa
 
 Este servidor guarda el estado de las partidas **en memoria del proceso**
-(la variable `esperando` y cada `Partida` en `server/main.py`). No hay base
-de datos ni nada compartido entre procesos. Eso tiene dos consecuencias
+(el `Lobby` global y cada `Partida` en `server/main.py`). No hay base de
+datos ni nada compartido entre procesos. Eso tiene dos consecuencias
 directas para donde y como lo despliegues:
 
 1. **Tiene que correr como un solo proceso/worker.** Si el hosting levanta
@@ -42,7 +42,7 @@ docker build -t pong-online .
 docker run -p 8000:8000 pong-online
 ```
 
-Y abrí `http://127.0.0.1:8000` en tres pestañas, igual que en el README.
+Y abrí `http://127.0.0.1:8000` en varias pestañas, igual que en el README.
 
 ## Opcion recomendada: Render
 
@@ -57,11 +57,11 @@ socket) gratis.
 4. Root Directory: `pong-online` (si el `Dockerfile` no esta en la raiz del
    repo sino dentro de esa carpeta).
 5. Instance Type: cualquiera sirve para probar; el plan gratuito alcanza
-   para vos y dos amigos jugando. **No** subas el "Instance Count"/replicas
-   por encima de 1 (ver la seccion de arriba).
+   para vos y hasta tres amigos jugando. **No** subas el "Instance
+   Count"/replicas por encima de 1 (ver la seccion de arriba).
 6. Deploy. Cuando termine te da una URL tipo
-   `https://pong-online-xxxx.onrender.com` — esa es la que abris en las tres
-   pestañas (o se la pasas a tus rivales).
+   `https://pong-online-xxxx.onrender.com` — esa es la que abris (o se la
+   pasas a tus rivales).
 
 No hace falta que configures el puerto a mano: Render inyecta `PORT` y el
 `CMD` del Dockerfile ya lo usa.
@@ -136,13 +136,12 @@ preferis no depender de una plataforma:
 
 ## Despues de desplegar
 
-- Probá desde tres dispositivos en redes distintas (no los tres en tu wifi
+- Probá desde varios dispositivos en redes distintas (no todos en tu wifi
   de casa) para confirmar que no hay ningun firewall/proxy bloqueando
   WebSocket en el medio.
-- Si alguien queda pegado en "Esperando jugadores..." y nunca avanza,
-  revisa los logs de la plataforma — casi siempre es la conexion
-  WebSocket que no esta llegando (falta `wss://`, o el proxy delante no la
-  deja pasar).
+- Si alguien queda pegado esperando en el lobby y nunca avanza, revisa los
+  logs de la plataforma — casi siempre es la conexion WebSocket que no esta
+  llegando (falta `wss://`, o el proxy delante no la deja pasar).
 - Recorda: reiniciar el servicio (redeploy, restart manual, o que se caiga
   y vuelva a levantar solo) borra cualquier partida en curso, porque todo
   vive en memoria. Nadie pierde datos importantes, pero si estan jugando en
