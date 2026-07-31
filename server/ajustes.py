@@ -13,23 +13,31 @@ proposito: asi entidades.Bola (que se centra en (ANCHO-tam)/2,
 (ALTO-tam)/2) sirve sin tocarle una linea para el saque en el medio.
 """
 
-ANCHO, ALTO = 800, 800
+# El campo se agrando ~26% en lineal respecto de la version original (era un
+# lienzo de 800 con RADIO_POLIGONO=340) porque quedaba apretado en los tres
+# modos: con la bola a velocidad maxima casi no habia tiempo de reaccion. La
+# pala y la velocidad de teclado se escalaron con el mismo factor para no
+# cambiar el balance (que fraccion de tu borde llegas a cubrir); la bola y su
+# velocidad quedaron igual a proposito, que es de donde sale el aire extra.
+ANCHO, ALTO = 1000, 1000
 CENTRO_X, CENTRO_Y = ANCHO / 2, ALTO / 2
 
 # Triangulo (3) y cuadrado (4): poligono regular inscripto en un circulo de
-# este radio, centrado en (CENTRO_X, CENTRO_Y).
-RADIO_POLIGONO = 340
+# este radio, centrado en (CENTRO_X, CENTRO_Y). Con 430 el poligono va de 70
+# a 930 dentro del lienzo, dejando margen para dibujar las vidas y la barra
+# de empujon por fuera de cada borde.
+RADIO_POLIGONO = 430
 
-# Rectangulo (2 jugadores): mitades de ancho/alto. La proporcion (680x420)
-# se parece a la del Pong de escritorio (800x500).
-RECT_MEDIO_ANCHO = 340
-RECT_MEDIO_ALTO = 210
+# Rectangulo (2 jugadores): mitades de ancho/alto. La proporcion (920x580)
+# se parece a la del Pong clasico.
+RECT_MEDIO_ANCHO = 460
+RECT_MEDIO_ALTO = 290
 
 FPS = 60
 
-PALA_LARGO = 82   # a lo largo del borde (equivalente a PALA_ALTO del modo 2D)
+PALA_LARGO = 104  # a lo largo del borde (equivalente a PALA_ALTO del modo 2D)
 PALA_GROSOR = 12  # perpendicular al borde (equivalente a PALA_ANCHO)
-PALA_VEL = 7.0
+PALA_VEL = 8.8    # solo teclado: el mouse va 1 a 1 y no le afecta
 
 BOLA_TAM = 12
 BOLA_VEL_INICIAL = 5.0
@@ -79,7 +87,7 @@ PODER_FACTOR_ENCOGER = 0.55
 PODER_FACTOR_VELOZ = 1.45
 PODER_FACTOR_LENTA = 0.6
 PODER_VEL_MIN = 3.0
-PODER_RADIO_SPAWN = 150  # radio del circulo central donde puede aparecer (cabe en las 3 formas, ver nota de OBSTACULO_RADIO_ZONA)
+PODER_RADIO_SPAWN = 180  # radio del circulo central donde puede aparecer; +PODER_TAM/2 da 190, entra en las 3 formas (ver nota de OBSTACULO_RADIO_ZONA)
 
 # Multibola: cuantas bolas extra suma (clonadas de la que la toco, con la
 # velocidad rotada un poco para cada lado) y el tope total de bolas en juego.
@@ -108,18 +116,18 @@ IMPULSO_COLOR = "#ff3864"
 
 
 # --- Obstaculos ----------------------------------------------------------
-# Bloques que rebotan solos en un cuadrado central. OBSTACULO_RADIO_ZONA=90
-# tiene que caber comodo en la forma mas chica de las tres: el rectangulo
-# de 2 jugadores, cuya distancia del centro al borde mas cercano
-# (arriba/abajo) es RECT_MEDIO_ALTO=210. Le sobra margen de sobra en los
-# otros dos modos (el triangulo, el mas ajustado de los poligonos, tiene
-# 170 de radio inscripto).
+# Bloques que rebotan solos en un cuadrado central de medio lado
+# OBSTACULO_RADIO_ZONA, que tiene que caber comodo en la forma mas ajustada
+# de las tres. Distancia del centro al borde mas cercano en cada modo:
+# triangulo 215 (el mas justo), rectangulo 290, cuadrado 304. Obstaculo.mover
+# recorta el bloque entero adentro de la zona, asi que el punto mas lejano
+# posible es la esquina del cuadrado: 110*raiz(2) = 156 < 215.
 OBSTACULO_CANTIDAD = 2
-OBSTACULO_ANCHO = 20
-OBSTACULO_ALTO = 60
+OBSTACULO_ANCHO = 24
+OBSTACULO_ALTO = 74
 OBSTACULO_VEL_MIN = 1.2
 OBSTACULO_VEL_MAX = 2.4
-OBSTACULO_RADIO_ZONA = 90
+OBSTACULO_RADIO_ZONA = 110
 
 
 # --- Lobby -----------------------------------------------------------------

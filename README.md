@@ -175,6 +175,12 @@ siente el juego:
   sin interpolar, cada paquete demorado se ve como un micro-tiron. El costo
   es dibujar ~17ms en el pasado, despreciable al lado del viaje de ida y
   vuelta al servidor que ya existe.
+- **El choque contra la pala cuenta el ancho de la bola**, no solo su centro
+  (ver `procesar_borde` en `server/colisiones_triangulo.py`). El barrido
+  calcula por donde cruzo el *centro* de la bola, pero la bola es un cuadrado
+  de 12: si se comparara solo ese punto contra el largo de la pala, un roce
+  en la punta —con media bola todavia solapandola en pantalla— contaria como
+  vida perdida. Se estira el alcance medio ancho de bola para cada lado.
 
 ## Correr en local
 

@@ -57,7 +57,12 @@ def procesar_borde(bola, borde, pala, eliminado):
 
     if not eliminado and pala is not None:
         s_min, s_max = pala.rango_s()
-        if not (s_min <= s <= s_max):
+        # `s` es donde cruzo el CENTRO de la bola, pero la bola es un cuadrado
+        # de BOLA_TAM de lado: si se contara solo el centro, un roce en la
+        # punta de la pala (con media bola todavia solapandola en pantalla)
+        # contaria como fallo. Se estira el alcance medio ancho de bola para
+        # cada lado, asi el choque coincide con lo que se ve.
+        if not (s_min - radio_bola <= s <= s_max + radio_bola):
             return {"tipo": "perdida"}
 
     rapidez = _rebotar(bola, borde, punto_cruce, s, pala, eliminado, umbral)

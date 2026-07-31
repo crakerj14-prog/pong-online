@@ -7,13 +7,15 @@
 // Para leer algo que no sea una posicion (impulso_color, vidas, si termino)
 // alcanza y sobra con `ultimoEstado`.
 
+// Valores de arranque nomas: el servidor manda los reales en `inicio`, antes
+// de que se dibuje nada del campo.
 export let geometria = {
-  campo: { ancho: 800, alto: 800 },
+  campo: { ancho: 1000, alto: 1000 },
   vertices: null,
   bordes: null,
   jugador_bordes: null,
   cantidad_jugadores: null,
-  pala: { largo: 82, grosor: 12 },
+  pala: { largo: 104, grosor: 12 },
   bola: { tam: 12 },
   poder_tam: 20,
   vidas_iniciales: 3,

@@ -99,7 +99,13 @@ h1 .etiqueta {
 canvas {
   background: var(--campo);
   border: 2px solid var(--borde);
+  /* El campo es cuadrado y grande (1000x1000 internos), asi que se acota por
+     los dos lados: por ancho para pantallas angostas y por alto para que
+     entre entero sin scrollear en una laptop. Con width/height en auto el
+     navegador mantiene la proporcion respetando ambos topes. */
   max-width: 100%;
+  max-height: calc(100vh - 240px);
+  width: auto;
   height: auto;
 }
 
@@ -111,7 +117,7 @@ canvas {
 
 #ajustes {
   width: 100%;
-  max-width: 800px;
+  max-width: 1000px;
   font-size: 12px;
   color: var(--tenue);
 }

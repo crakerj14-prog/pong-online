@@ -57,15 +57,15 @@ Se manda a todos los jugadores de la partida cuando arranca.
 {
   "type": "inicio",
   "numero": 1,
-  "campo": { "ancho": 800, "alto": 800 },
-  "vertices": [[400, 60], [694.4, 570], [105.6, 570]],
+  "campo": { "ancho": 1000, "alto": 1000 },
+  "vertices": [[500, 70], [872.4, 715], [127.6, 715]],
   "bordes": [
-    { "a": [400, 60], "b": [694.4, 570], "angulo": 1.05 },
-    { "a": [694.4, 570], "b": [105.6, 570], "angulo": 3.14 },
-    { "a": [105.6, 570], "b": [400, 60], "angulo": -1.05 }
+    { "a": [500, 70], "b": [872.4, 715], "angulo": 1.05 },
+    { "a": [872.4, 715], "b": [127.6, 715], "angulo": 3.14 },
+    { "a": [127.6, 715], "b": [500, 70], "angulo": -1.05 }
   ],
   "jugador_bordes": [0, 1, 2],
-  "pala": { "largo": 82, "grosor": 12 },
+  "pala": { "largo": 104, "grosor": 12 },
   "bola": { "tam": 12 },
   "poder_tam": 20,
   "vidas_iniciales": 3,
@@ -94,25 +94,25 @@ segundo mientras la partida esta activa).
 {
   "type": "estado",
   "bolas": [
-    { "x": 394.0, "y": 410.5 }
+    { "x": 494.0, "y": 510.5 }
   ],
   "palas": [
-    { "x": 500.1, "y": 280.4, "largo": 82.0, "eliminado": false },
-    { "x": 450.0, "y": 570.0, "largo": 131.2, "eliminado": false },
-    { "x": 150.0, "y": 400.0, "largo": 82.0, "eliminado": true }
+    { "x": 630.1, "y": 350.4, "largo": 104.0, "eliminado": false },
+    { "x": 550.0, "y": 715.0, "largo": 166.4, "eliminado": false },
+    { "x": 280.0, "y": 480.0, "largo": 104.0, "eliminado": true }
   ],
   "vidas": [3, 2, 0],
   "obstaculos": [
-    { "x": 320.0, "y": 350.0, "ancho": 20, "alto": 60 },
-    { "x": 460.0, "y": 420.0, "ancho": 20, "alto": 60 }
+    { "x": 420.0, "y": 450.0, "ancho": 24, "alto": 74 },
+    { "x": 560.0, "y": 520.0, "ancho": 24, "alto": 74 }
   ],
   "saque": false,
   "cuenta_saque": 3,
   "terminada": false,
   "ganador": null,
   "poderes": [
-    { "tipo": "crecer", "simbolo": "+", "color": "#4ade80", "x": 412.0, "y": 380.0 },
-    { "tipo": "paralisis", "simbolo": "Zz", "color": "#818cf8", "x": 350.0, "y": 420.0 }
+    { "tipo": "crecer", "simbolo": "+", "color": "#4ade80", "x": 512.0, "y": 480.0 },
+    { "tipo": "paralisis", "simbolo": "Zz", "color": "#818cf8", "x": 450.0, "y": 520.0 }
   ],
   "empujon": [1.0, 0.4, 1.0],
   "impulso_color": null,
