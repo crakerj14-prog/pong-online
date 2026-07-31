@@ -21,12 +21,22 @@ ahi. Gana el ultimo jugador que le queden vidas.
 
 ## Que tiene (todo portado del juego de escritorio, mas lo nuevo del online)
 
-Poderes (pala grande / pala chica / bola rapida / bola lenta), empujon (dash
-con Shift) con su impulso (golpe potenciado que acelera la bola y le cambia
-el color unos segundos), particulas, estela, brillo, lineas de escaneo, 6
-temas de color, sonido, control por mouse (la pala sigue al cursor 1 a 1,
-sin limite de velocidad) y obstaculos que rebotan solos en el centro del
-campo.
+Empujon (dash con Shift) con su impulso (golpe potenciado que acelera la
+bola y le cambia el color unos segundos), particulas, estela, brillo,
+lineas de escaneo, 6 temas de color, sonido, control por mouse (la pala
+sigue al cursor 1 a 1, sin limite de velocidad) y obstaculos que rebotan
+solos en el centro del campo.
+
+**Poderes**: pueden convivir varios en el campo a la vez (hasta 4) — cada
+tanto aparece uno nuevo sin importar si los anteriores siguen sin agarrar.
+Ademas de los 4 de siempre (pala grande, pala chica, bola rapida, bola
+lenta), tres nuevos, exclusivos de este modo:
+
+| Poder | Que hace |
+| --- | --- |
+| `x3` Multibola | Suma bolas extra (clonadas de la que lo toco, con la velocidad rotada un poco para cada lado) hasta un total de 3 en juego. Cualquier bola perdida limpia todas las demas y se vuelve a sacar con una sola. |
+| `!!` Empujon sin limite | Durante 6 segundos, tu empujon ignora el tiempo de espera normal — solo te frena la animacion de ida y vuelta (~0.3s), asi que se puede encadenar bastante seguido. |
+| `Zz` Paralisis | A un rival al azar le reduce mucho la velocidad de su pala (18% de lo normal) por 4 segundos — y a la vez frena la bola (mismo factor que el poder de bola lenta), para que el paralizado tenga alguna chance real en vez de solo mirar. |
 
 ## Que se reutilizo y que se reescribio
 
@@ -137,6 +147,16 @@ Vas a ver algo como `Uvicorn running on http://127.0.0.1:8000`.
    poder y algun obstaculo en el medio del campo.
 8. Abri el panel "Ajustes" en una sola pestaña y cambiale el tema — las
    otras dos no se tienen que inmutar, es 100% local de cada navegador.
+9. Dejá pasar un rato y confirma que puedan aparecer **varios** poderes a
+   la vez (no hace falta agarrar uno para que aparezca el siguiente).
+10. Agarra un `x3` (multibola) y confirma que aparezcan bolas extra
+    saliendo del mismo punto; despues dejá que se pierda cualquiera de
+    ellas y confirma que vuelve a quedar una sola.
+11. Agarra un `!!` (empujon sin limite) y probá spamear `Shift` seguido — el
+    empujon no deberia frenarse por el cooldown normal mientras dura.
+12. Agarra un `Zz` (paralisis) y confirma que a un rival al azar (no a vos)
+    se le vea la pala moviendose muy despacio un rato, y que la pelota
+    tambien se note mas lenta ese mismo momento.
 
 Si abris una **cuarta** pestaña mientras las otras tres ya estan jugando, esa
 queda esperando a que se conecten otras dos para armar el siguiente trio.

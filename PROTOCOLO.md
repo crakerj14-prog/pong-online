@@ -46,7 +46,9 @@ mientras la partida esta activa).
 ```json
 {
   "type": "estado",
-  "bola": { "x": 394.0, "y": 410.5 },
+  "bolas": [
+    { "x": 394.0, "y": 410.5 }
+  ],
   "palas": [
     { "x": 500.1, "y": 280.4, "largo": 82.0, "eliminado": false },
     { "x": 450.0, "y": 570.0, "largo": 131.2, "eliminado": false },
@@ -61,12 +63,21 @@ mientras la partida esta activa).
   "cuenta_saque": 3,
   "terminada": false,
   "ganador": null,
-  "poder": { "tipo": "crecer", "simbolo": "+", "color": "#4ade80", "x": 412.0, "y": 380.0 },
+  "poderes": [
+    { "tipo": "crecer", "simbolo": "+", "color": "#4ade80", "x": 412.0, "y": 380.0 },
+    { "tipo": "paralisis", "simbolo": "Zz", "color": "#818cf8", "x": 350.0, "y": 420.0 }
+  ],
   "empujon": [1.0, 0.4, 1.0],
   "impulso_color": null,
   "eventos": []
 }
 ```
+- `bolas`: normalmente una sola, pero el poder "multibola" puede sumar hasta
+  `MULTIBOLA_MAX_BOLAS` (3 por defecto). Cualquier bola que se le escape a un
+  jugador por donde su pala no cubre le cuesta una vida — con varias bolas en
+  juego, perder cualquiera de ellas limpia todas las demas y se vuelve a
+  sacar con una sola (para que el estado nunca quede a medio camino entre
+  "una bola menos" y "sigue habiendo dos").
 - `palas[i]` es la pala del jugador `i+1`. `x`/`y` es el **centro** de la
   pala en coordenadas del campo, ya rotado/desplazado (incluye el offset del
   empujon si esta en pleno dash) — el cliente solo la dibuja ahi, rotada
@@ -80,10 +91,31 @@ mientras la partida esta activa).
   (arranque de partida o despues de perder una vida).
 - Cuando `terminada` es `true`, `ganador` es el numero (1/2/3) del ultimo
   jugador con vidas, y ese es el ultimo `estado` que se manda.
-- `poder`: `null` si no hay ninguno esperando.
-- `empujon[i]`: 0 a 1, que tan listo esta el empujon del jugador `i+1`.
+- `poderes`: lista (puede estar vacia). Pueden convivir varios en el campo a
+  la vez — cada tanto aparece uno nuevo sin importar si los anteriores
+  siguen sin agarrar, hasta un tope (`PODER_MAX_SIMULTANEOS`, 4 por defecto).
+  Los tipos posibles: `crecer`, `encoger`, `veloz`, `lenta` (ver el modo de
+  2 jugadores) mas tres nuevos de este modo:
+  - `multibola`: agrega bolas extra (clonadas de la que lo toco, con la
+    velocidad rotada un poco para cada lado).
+  - `empujon_libre`: durante `duracion` segundos, el empujon de quien lo
+    agarro ignora el tiempo de espera normal — solo lo limita el tiempo que
+    tarda la animacion de ida y vuelta (~0.3s), asi que se puede encadenar
+    seguido.
+  - `paralisis`: a un rival al azar (no a quien lo agarro) le reduce mucho
+    la velocidad de su pala por `duracion` segundos, y a la vez frena la
+    bola (mismo factor que el poder `lenta`) para que el paralizado tenga
+    alguna chance real de todos modos.
+- `empujon[i]`: 0 a 1, que tan listo esta el empujon del jugador `i+1`
+  (1 tambien durante un `empujon_libre` activo, aunque el cooldown de fondo
+  siga corriendo).
 - `impulso_color`: igual que el modo de 2 — mientras no sea `null`, pinta la
-  bola con ese color en vez del color normal del tema.
+  bola con ese color en vez del color normal del tema. Con varias bolas en
+  juego (multibola) es una simplificacion deliberada: pinta **todas** las
+  bolas del mismo color mientras dura, no solo la que efectivamente esta
+  potenciada (el servidor solo le acelera la velocidad a esa una, pero
+  distinguir cual es cual visualmente hubiera sumado bastante mas
+  complejidad para un efecto que dura 3 segundos).
 - `eventos`: particulas/sonido puntuales, mismo formato que el modo de 2:
   - `{"tipo": "particulas", "x": .., "y": .., "color": .., "cantidad": ..}` —
     `color` es un hex fijo o una clave de tema (`"pala1"`, `"pala2"`,

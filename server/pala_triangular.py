@@ -6,6 +6,11 @@ Vive sobre un borde fijo del campo. Su posicion tiene dos componentes:
   offset_normal -- que tanto se adelanto hacia adentro del campo (lo mueve
                     el empujon; en reposo es 0, la pala vive justo sobre el
                     borde).
+
+`multiplicador_velocidad` es lo que usa el poder de paralisis: en 1.0 (el
+default) no cambia nada; mientras esta por debajo de 1.0, tanto el teclado
+(mover) como el mouse (mover_a, que normalmente salta directo sin tope)
+quedan atados a esa fraccion de la velocidad normal.
 """
 
 import ajustes as cfg
@@ -22,6 +27,9 @@ class PalaBorde:
         self.efecto_restante = 0
         self.dash_activo = False
 
+        self.multiplicador_velocidad = 1.0
+        self.paralisis_restante = 0
+
     def centrar(self):
         self.largo = self.largo_base
         self.efecto_restante = 0
@@ -29,6 +37,8 @@ class PalaBorde:
         self.offset_normal = 0.0
         self.velocidad_actual = 0.0
         self.dash_activo = False
+        self.multiplicador_velocidad = 1.0
+        self.paralisis_restante = 0
 
     def _clamped(self, s):
         mitad = self.largo / 2
@@ -36,13 +46,22 @@ class PalaBorde:
 
     def mover(self, direccion, velocidad=cfg.PALA_VEL):
         anterior = self.s
-        self.s = self._clamped(self.s + direccion * velocidad)
+        self.s = self._clamped(self.s + direccion * velocidad * self.multiplicador_velocidad)
         self.velocidad_actual = self.s - anterior
 
     def mover_a(self, s_objetivo):
-        """Sigue directo al objetivo, sin tope de velocidad (control por mouse)."""
+        """Sigue al objetivo (control por mouse). Sin tope de velocidad salvo
+        que este paralizada, en cuyo caso avanza a lo sumo `PALA_VEL *
+        multiplicador_velocidad` por cuadro en vez de saltar directo."""
         anterior = self.s
-        self.s = self._clamped(s_objetivo)
+        objetivo = self._clamped(s_objetivo)
+        if self.multiplicador_velocidad >= 1.0:
+            self.s = objetivo
+        else:
+            paso_max = cfg.PALA_VEL * self.multiplicador_velocidad
+            diferencia = objetivo - self.s
+            paso = max(-paso_max, min(paso_max, diferencia))
+            self.s = self._clamped(self.s + paso)
         self.velocidad_actual = self.s - anterior
 
     def aplicar_efecto(self, factor, duracion_frames):
@@ -59,6 +78,17 @@ class PalaBorde:
             centro = self.s
             self.largo = self.largo_base
             self.s = self._clamped(centro)
+
+    def aplicar_paralisis(self, multiplicador, duracion_frames):
+        self.multiplicador_velocidad = multiplicador
+        self.paralisis_restante = duracion_frames
+
+    def actualizar_paralisis(self):
+        if self.paralisis_restante <= 0:
+            return
+        self.paralisis_restante -= 1
+        if self.paralisis_restante == 0:
+            self.multiplicador_velocidad = 1.0
 
     def centro_mundo(self):
         """Posicion (x, y) del centro de la pala, con el offset del empujon incluido."""

@@ -163,10 +163,13 @@ socket.addEventListener("message", (evento) => {
 
     case "estado":
       ultimoEstado = mensaje;
-      if (mensaje.saque) {
+      if (mensaje.saque || mensaje.bolas.length === 0) {
         estela.length = 0;
       } else {
-        agregarEstela(mensaje.bola.x, mensaje.bola.y);
+        // La estela solo sigue a la primera bola: con multibola activo las
+        // demas no dejan rastro, para no complicar el sistema de estela con
+        // varias colas independientes por un efecto que dura poco.
+        agregarEstela(mensaje.bolas[0].x, mensaje.bolas[0].y);
       }
       for (const ev of mensaje.eventos) {
         if (ev.tipo === "particulas") {
@@ -489,9 +492,16 @@ function dibujarObstaculos() {
   }
 }
 
-function dibujarBola() {
+function dibujarBolas() {
   const tam = geometria.bola.tam;
-  rectConBrillo(ultimoEstado.bola.x, ultimoEstado.bola.y, tam, tam, colorBolaActual());
+  // Simplificacion deliberada: todas las bolas usan el mismo color de
+  // impulso mientras dure, aunque el servidor solo le haya acelerado la
+  // velocidad a la que efectivamente conecto el golpe potenciado (ver
+  // PROTOCOLO.md).
+  const color = colorBolaActual();
+  for (const bola of ultimoEstado.bolas) {
+    rectConBrillo(bola.x, bola.y, tam, tam, color);
+  }
 }
 
 function dibujarPoder(poder) {
@@ -560,7 +570,9 @@ function dibujar() {
   dibujarObstaculos();
   if (ajustes.particulas) dibujarParticulas();
   if (ajustes.estela) dibujarEstela();
-  if (ultimoEstado.poder) dibujarPoder(ultimoEstado.poder);
+  for (const poder of ultimoEstado.poderes) {
+    dibujarPoder(poder);
+  }
 
   for (let i = 0; i < 3; i++) {
     dibujarPalaTriangular(i, ultimoEstado.palas[i], coloresPala[i]);
@@ -570,7 +582,7 @@ function dibujar() {
   }
 
   if (!ultimoEstado.terminada) {
-    dibujarBola();
+    dibujarBolas();
   }
 
   if (ultimoEstado.terminada) {

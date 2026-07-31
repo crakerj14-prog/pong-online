@@ -32,8 +32,12 @@ VIDAS_INICIALES = 3
 
 
 # --- Poderes -------------------------------------------------------------
-# Mismos valores que la version de 2 jugadores. El color de cada poder es
-# fijo (no depende del tema): el cliente lo usa tal cual.
+# El color de cada poder es fijo (no depende del tema): el cliente lo usa
+# tal cual. "peso" es el peso relativo al sortear (mas peso, mas frecuente).
+#
+# Pueden aparecer varios a la vez en el campo (ver PODER_MAX_SIMULTANEOS):
+# cada tanto se intenta generar uno nuevo sin importar si los anteriores
+# siguen sin agarrar, hasta llegar al tope.
 PODERES = [
     {"tipo": "crecer", "nombre": "Pala grande", "simbolo": "+",
      "color": "#4ade80", "duracion": 7.0, "peso": 3},
@@ -43,17 +47,34 @@ PODERES = [
      "color": "#fbbf24", "duracion": 0, "peso": 3},
     {"tipo": "lenta", "nombre": "Bola lenta", "simbolo": "<<",
      "color": "#60a5fa", "duracion": 0, "peso": 1},
+    {"tipo": "multibola", "nombre": "Multibola", "simbolo": "x3",
+     "color": "#e879f9", "duracion": 0, "peso": 2},
+    {"tipo": "empujon_libre", "nombre": "Empujon sin limite", "simbolo": "!!",
+     "color": "#fb923c", "duracion": 6.0, "peso": 2},
+    {"tipo": "paralisis", "nombre": "Paralisis", "simbolo": "Zz",
+     "color": "#818cf8", "duracion": 4.0, "peso": 2},
 ]
 
 PODER_TAM = 20
 PODER_INTERVALO_MIN_SEG = 6
 PODER_INTERVALO_MAX_SEG = 11
+PODER_MAX_SIMULTANEOS = 4  # tope de poderes esperando en el campo a la vez
 PODER_FACTOR_CRECER = 1.6
 PODER_FACTOR_ENCOGER = 0.55
 PODER_FACTOR_VELOZ = 1.45
 PODER_FACTOR_LENTA = 0.6
 PODER_VEL_MIN = 3.0
 PODER_RADIO_SPAWN = 150  # radio del circulo central (seguro: cabe en el triangulo) donde puede aparecer
+
+# Multibola: cuantas bolas extra suma (clonadas de la que la toco, con la
+# velocidad rotada un poco para cada lado) y el tope total de bolas en juego.
+MULTIBOLA_CANTIDAD_EXTRA = 2
+MULTIBOLA_MAX_BOLAS = 3
+
+# Paralisis: no inmoviliza del todo (eso dejaria inutil el enlentecimiento de
+# la bola que la acompaña, que es justamente lo que le da una chance al
+# paralizado); lo deja moviendose muy despacio.
+PARALISIS_MULTIPLICADOR = 0.18
 
 
 # --- Empujon (dash) ----------------------------------------------------------

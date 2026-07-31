@@ -11,6 +11,12 @@ la bola por una parte que su pala no cubre, pierde una vida; a las 0 vidas
 su borde se convierte en pared fija (sigue rebotando la bola, pero ya no
 hay nada que perder ahi). Gana el ultimo jugador con vidas.
 
+Puede haber varias bolas en juego a la vez (poder "multibola") y varios
+poderes esperando en el campo al mismo tiempo. Cuando se pierde una vida,
+sea cual sea la bola que se escapo, se limpia todo y se vuelve a sacar con
+una sola bola -- asi el estado nunca queda a medio camino entre "una bola
+menos" y "sigue habiendo dos".
+
 Los clientes nunca calculan fisica: mandan input (teclado, mouse, el
 disparo del empujon) y reciben el estado completo en cada cuadro, mas una
 lista de "eventos" puntuales para particulas/sonido. Ver PROTOCOLO.md.
@@ -42,6 +48,12 @@ RAIZ = Path(__file__).resolve().parent
 CLIENTE_DIR = RAIZ.parent / "client"
 
 app = FastAPI()
+
+
+def _rotar(vx, vy, angulo):
+    """Rota el vector (vx, vy) `angulo` radianes."""
+    cos_a, sin_a = math.cos(angulo), math.sin(angulo)
+    return vx * cos_a - vy * sin_a, vx * sin_a + vy * cos_a
 
 
 class Jugador:
@@ -124,11 +136,12 @@ class Partida:
     def __init__(self, jugadores):
         self.jugadores = jugadores  # lista de 3 Jugador, indice 0/1/2 = numero 1/2/3
         self.palas = [PalaBorde(borde) for borde in geometria.BORDES]
-        self.bola = Bola()
+        self.bolas = [Bola()]
         self.obstaculos = _crear_obstaculos()
         self.poderes = Poderes(self.palas)
         self.empujones = [Empujon(pala) for pala in self.palas]
         self.impulso = Impulso()
+        self.impulso_bola = None  # a cual de self.bolas le esta aplicando el impulso ahora
         self.eventos = []
 
         self.vidas = [cfg.VIDAS_INICIALES] * 3
@@ -143,14 +156,21 @@ class Partida:
 
     # --- Ciclo de partida ------------------------------------------------
     def _sacar(self):
+        """Deja una sola bola en juego, saliendo del centro en una direccion
+        al azar. Se usa tanto al arrancar la partida como despues de
+        cualquier vida perdida (incluso si en ese momento habia varias bolas
+        por el poder multibola: todas se descartan y se vuelve a esta)."""
+        bola = self.bolas[0] if self.bolas else Bola()
         angulo = random.uniform(0, math.tau)
-        self.bola.vx = math.cos(angulo) * cfg.BOLA_VEL_INICIAL
-        self.bola.vy = math.sin(angulo) * cfg.BOLA_VEL_INICIAL
-        self.bola.x = cfg.CENTRO_X - self.bola.tam / 2
-        self.bola.y = cfg.CENTRO_Y - self.bola.tam / 2
-        self.bola.x_previo, self.bola.y_previo = self.bola.x, self.bola.y
+        bola.vx = math.cos(angulo) * cfg.BOLA_VEL_INICIAL
+        bola.vy = math.sin(angulo) * cfg.BOLA_VEL_INICIAL
+        bola.x = cfg.CENTRO_X - bola.tam / 2
+        bola.y = cfg.CENTRO_Y - bola.tam / 2
+        bola.x_previo, bola.y_previo = bola.x, bola.y
+        self.bolas = [bola]
         self.espera_saque = cfg.FRAMES_SAQUE
         self.impulso.cancelar()
+        self.impulso_bola = None
         self.ultimo_en_golpear = None
 
     def activar_empujon(self, numero_jugador):
@@ -165,6 +185,7 @@ class Partida:
                 continue
             self._mover_jugador(self.palas[indice], jugador)
             self.palas[indice].actualizar_efecto()
+            self.palas[indice].actualizar_paralisis()
             self.empujones[indice].actualizar()
 
         self.poderes.actualizar_spawn(habilitado=True)
@@ -177,22 +198,35 @@ class Partida:
             self.espera_saque -= 1
             return
 
-        self.impulso.actualizar(self.bola)
-        self._mover_bola()
+        if self.impulso_bola is not None and self.impulso_bola in self.bolas:
+            self.impulso.actualizar(self.impulso_bola)
+        elif self.impulso.activo:
+            # La bola que tenia el impulso ya no esta en juego (se perdio una
+            # vida y se reseteo todo): se cancela prolijo en vez de quedar
+            # con un color/temporizador que ya no describe nada real.
+            self.impulso.cancelar()
+            self.impulso_bola = None
+
+        self._mover_bolas()
 
     def _mover_jugador(self, pala, jugador):
-        """Teclado mueve a velocidad fija; mouse sigue al cursor 1 a 1 (ver
-        la misma nota de riesgo aceptado que la version de 2 jugadores,
-        documentada ahi en detalle: un salto de mouse muy rapido en teoria
-        podria saltearse la bola sin que se detecte el choque)."""
+        """Teclado mueve a velocidad fija; mouse sigue al cursor 1 a 1 salvo
+        que este paralizada (ver PalaBorde.mover_a). Nota de riesgo aceptado
+        sobre el mouse sin tope de velocidad: un salto de cursor muy rapido
+        en teoria podria saltearse la bola sin que se detecte el choque."""
         if jugador.modo_control == "mouse" and jugador.mouse_x is not None:
             s = pala.borde.posicion_tangencial((jugador.mouse_x, jugador.mouse_y))
             pala.mover_a(s)
         else:
             pala.mover(jugador.direccion)
 
-    def _mover_bola(self):
-        bola = self.bola
+    def _mover_bolas(self):
+        for bola in list(self.bolas):
+            if bola not in self.bolas:
+                continue  # una bola perdida antes en este mismo cuadro ya reseteo todo
+            self._mover_una_bola(bola)
+
+    def _mover_una_bola(self, bola):
         bola.x_previo, bola.y_previo = bola.x, bola.y
         bola.x += bola.vx
         bola.y += bola.vy
@@ -215,13 +249,17 @@ class Partida:
                 self.ultimo_en_golpear = indice + 1
                 if self.palas[indice].dash_activo:
                     self.impulso.activar(bola, cfg.IMPULSO_COLOR)
+                    self.impulso_bola = bola
                     self._evento_particulas(bola.centro_x, bola.centro_y, cfg.IMPULSO_COLOR, 26)
                     self._evento_sonido(900, 60)
-                else:
+                elif bola is self.impulso_bola:
+                    # Golpe normal en la MISMA bola que tenia el impulso: la
+                    # fisica normal ya le recalculo la velocidad. Un golpe
+                    # normal en OTRA bola no le toca el impulso a esta.
                     self.impulso.cancelar()
+                    self.impulso_bola = None
             break
         else:
-            # Ningun borde reboto ni hubo vida perdida: prueba obstaculos y poder.
             for obstaculo in self.obstaculos:
                 resultado = colisiones.resolver_pala(bola, obstaculo, cfg.DIFICULTAD)
                 if resultado is None:
@@ -235,6 +273,7 @@ class Partida:
             if resultado_poder is not None:
                 self._evento_particulas(bola.centro_x, bola.centro_y, resultado_poder["color"], 22)
                 self._evento_sonido(700, 45)
+                self._aplicar_poder_extendido(resultado_poder, bola)
 
     def _perder_vida(self, indice_jugador):
         self.vidas[indice_jugador] -= 1
@@ -255,6 +294,50 @@ class Partida:
 
         self._sacar()
 
+    # --- Poderes que necesitan mas que "palas" (los resuelve Poderes) -------
+    def _aplicar_poder_extendido(self, info, bola):
+        """"crecer"/"encoger"/"veloz"/"lenta" ya los aplico
+        Poderes.recoger_si_toca; estos tres necesitan la lista de bolas o de
+        empujones, que ese objeto no tiene."""
+        if self.ultimo_en_golpear is None:
+            return
+
+        if info["tipo"] == "multibola":
+            self._crear_bolas_extra(bola)
+        elif info["tipo"] == "empujon_libre":
+            duracion_frames = int(info["duracion"] * cfg.FPS)
+            self.empujones[self.ultimo_en_golpear - 1].activar_sin_cooldown(duracion_frames)
+        elif info["tipo"] == "paralisis":
+            otros = [n for n in (1, 2, 3) if n != self.ultimo_en_golpear]
+            objetivo = random.choice(otros)
+            duracion_frames = int(info["duracion"] * cfg.FPS)
+            self.palas[objetivo - 1].aplicar_paralisis(cfg.PARALISIS_MULTIPLICADOR, duracion_frames)
+            # Ralentiza la bola a la vez: le da una chance real al paralizado
+            # en vez de solo dejarlo mirando (ver notas de diseño del poder).
+            self._escalar_bola(bola, cfg.PODER_FACTOR_LENTA)
+
+    def _crear_bolas_extra(self, bola_origen):
+        libres = cfg.MULTIBOLA_MAX_BOLAS - len(self.bolas)
+        cantidad = min(cfg.MULTIBOLA_CANTIDAD_EXTRA, max(0, libres))
+        for i in range(cantidad):
+            angulo = math.radians(35 + i * 25) * (1 if i % 2 == 0 else -1)
+            vx, vy = _rotar(bola_origen.vx, bola_origen.vy, angulo)
+            nueva = Bola()
+            nueva.x, nueva.y = bola_origen.x, bola_origen.y
+            nueva.x_previo, nueva.y_previo = bola_origen.x, bola_origen.y
+            nueva.vx, nueva.vy = vx, vy
+            self.bolas.append(nueva)
+
+    @staticmethod
+    def _escalar_bola(bola, factor):
+        actual = bola.velocidad
+        if actual == 0:
+            return
+        nueva = max(cfg.PODER_VEL_MIN, min(cfg.BOLA_VEL_MAX, actual * factor))
+        escala = nueva / actual
+        bola.vx *= escala
+        bola.vy *= escala
+
     # --- Eventos puntuales (particulas/sonido) ------------------------------
     def _evento_particulas(self, x, y, color, cantidad):
         """`color` es un hex fijo ("#rrggbb") o una clave de tema
@@ -270,13 +353,13 @@ class Partida:
 
     # --- Serializacion -------------------------------------------------------
     def estado_json(self):
-        poder = None
-        if self.poderes.actual is not None:
-            info = self.poderes.actual
-            poder = {
+        poderes_json = [
+            {
                 "tipo": info["tipo"], "simbolo": info["simbolo"], "color": info["color"],
                 "x": round(info["x"], 1), "y": round(info["y"], 1),
             }
+            for info in self.poderes.activos
+        ]
 
         palas_json = []
         for indice, pala in enumerate(self.palas):
@@ -289,7 +372,7 @@ class Partida:
 
         mensaje = {
             "type": "estado",
-            "bola": {"x": round(self.bola.x, 1), "y": round(self.bola.y, 1)},
+            "bolas": [{"x": round(b.x, 1), "y": round(b.y, 1)} for b in self.bolas],
             "palas": palas_json,
             "vidas": list(self.vidas),
             "obstaculos": [
@@ -300,7 +383,7 @@ class Partida:
             "cuenta_saque": self.espera_saque // (cfg.FRAMES_SAQUE // 3 + 1) + 1,
             "terminada": self.terminada,
             "ganador": self.ganador,
-            "poder": poder,
+            "poderes": poderes_json,
             "empujon": [round(e.proporcion_espera, 2) for e in self.empujones],
             "impulso_color": self.impulso.color,
             "eventos": self.eventos,
