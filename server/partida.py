@@ -17,6 +17,7 @@ una sola bola.
 """
 
 import asyncio
+import json
 import math
 import random
 
@@ -336,16 +337,24 @@ class Partida:
 
 
 async def bucle_partida(partida: Partida):
-    """Tick fijo a cfg.FPS por segundo: fisica + broadcast a todos los jugadores."""
+    """Tick fijo a cfg.FPS por segundo: fisica + broadcast a todos los jugadores.
+
+    El JSON se arma una sola vez por cuadro (no una vez por jugador -- eso es
+    lo que hace `send_json` internamente si se lo llama con el mismo dict
+    varias veces) y se manda a todos en paralelo con `asyncio.gather` en vez
+    de uno por uno, para no acumular la latencia de cada envio de forma
+    secuencial. Si el envio le falla a cualquiera, se corta la partida para
+    todos (mismo criterio que antes)."""
     intervalo = 1 / cfg.FPS
     while partida.activa:
         partida.actualizar()
-        mensaje = partida.estado_json()
-        for jugador in partida.jugadores:
-            try:
-                await jugador.ws.send_json(mensaje)
-            except Exception:
-                partida.activa = False
+        texto = json.dumps(partida.estado_json())
+        resultados = await asyncio.gather(
+            *(jugador.ws.send_text(texto) for jugador in partida.jugadores),
+            return_exceptions=True,
+        )
+        if any(isinstance(r, Exception) for r in resultados):
+            partida.activa = False
         if partida.terminada:
             break
         await asyncio.sleep(intervalo)
