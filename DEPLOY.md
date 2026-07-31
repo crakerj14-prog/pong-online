@@ -3,9 +3,9 @@
 ## Antes de elegir donde alojarlo, esto importa
 
 Este servidor guarda el estado de las partidas **en memoria del proceso**
-(el `Lobby` global y cada `Partida` en `server/main.py`). No hay base de
-datos ni nada compartido entre procesos. Eso tiene dos consecuencias
-directas para donde y como lo despliegues:
+(el `Lobby` en `server/lobby.py` y cada `Partida` en `server/partida.py`).
+No hay base de datos ni nada compartido entre procesos. Eso tiene dos
+consecuencias directas para donde y como lo despliegues:
 
 1. **Tiene que correr como un solo proceso/worker.** Si el hosting levanta
    varias instancias (autoscaling, `--workers 4`, multiples contenedores

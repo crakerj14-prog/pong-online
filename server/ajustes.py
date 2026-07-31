@@ -1,5 +1,5 @@
 """Constantes de fisica del servidor: 2, 3 o 4 jugadores, elegido por el
-anfitrion antes de arrancar (ver Lobby en server/main.py).
+anfitrion antes de arrancar (ver Lobby en server/lobby.py).
 
 El campo siempre vive en un lienzo de ANCHO x ALTO. Segun la cantidad de
 jugadores, geometria.construir() arma una forma distinta adentro de ese

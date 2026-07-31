@@ -34,10 +34,17 @@ servidor manda.
 
 Empujon (dash con Shift) con su impulso (golpe potenciado que acelera la
 bola y le cambia el color unos segundos), particulas, estela, brillo,
-lineas de escaneo, 6 temas de color, sonido, control por mouse (la pala
-sigue al cursor 1 a 1, sin limite de velocidad) y obstaculos que rebotan
-solos en el centro del campo. **Todo funciona igual en los 3 modos** (2, 3 o
-4 jugadores) — no hay nada exclusivo de un tamaño de partida.
+lineas de escaneo, 6 temas de color, sonido, musica de fondo (un loop corto
+generado con Web Audio, sin ningun archivo de audio de por medio — igual que
+los efectos), control por mouse (la pala sigue al cursor 1 a 1, sin limite
+de velocidad) y obstaculos que rebotan solos en el centro del campo. **Todo
+funciona igual en los 3 modos** (2, 3 o 4 jugadores) — no hay nada exclusivo
+de un tamaño de partida.
+
+La musica y los efectos de sonido se controlan por separado desde
+"Ajustes" ("Musica" / "Sonido"): la musica arranca bastante mas baja de
+volumen que los efectos a proposito, para no taparlos ni cansar en
+partidas largas.
 
 **Poderes**: pueden convivir varios en el campo a la vez (hasta 4) — cada
 tanto aparece uno nuevo sin importar si los anteriores siguen sin agarrar.
@@ -81,39 +88,59 @@ triangulo o cuadrado sin duplicar la fisica:
   rastrea explicito (con 2 jugadores en el Pong clasico se podia inferir
   del signo de la velocidad; con 3 o 4 no alcanza), y el empujon avanza a lo
   largo de la normal del borde en vez de "hacia la derecha".
-- `server/main.py` — el `Lobby` (eleccion del anfitrion, matchmaking) y la
-  `Partida` distinguen "indice de borde" (puede haber mas lados que
-  jugadores, como en el rectangulo) de "indice de jugador" — todo lo demas
-  (vidas, poderes, empujones) esta indexado por jugador, no por borde.
+- `server/partida.py` — la `Partida` distingue "indice de borde" (puede
+  haber mas lados que jugadores, como en el rectangulo) de "indice de
+  jugador" — todo lo demas (vidas, poderes, empujones) esta indexado por
+  jugador, no por borde.
+- `server/lobby.py` — el `Lobby` (eleccion del anfitrion, matchmaking) no
+  sabe nada de fisica: arma el grupo y le entrega la lista de jugadores a
+  `Partida`, que es quien decide que forma darle al campo.
 
 **Sobre el mouse sin limite de velocidad**: en teoria, un salto de cursor muy
 rapido podria "saltearse" la pelota sin que se detecte el choque. Es un
 riesgo aceptado a proposito para un juego casual — en el peor caso se escapa
 una vida, nada se rompe. Documentado en `Partida._mover_jugador` en
-`server/main.py`.
+`server/partida.py`.
 
 ## Arquitectura
 
 ```
 pong-online/
   server/
-    main.py                FastAPI: cliente + WebSocket /ws + Lobby + loop de juego
-    ajustes.py               constantes de fisica (rectangulo/triangulo/cuadrado)
-    geometria.py              vertices/bordes segun cantidad de jugadores
-    pala_triangular.py        pala sobre un borde
-    colisiones_triangulo.py   rebote bola-borde (pared o pala)
-    entidades.py               Bola (copia de pong/, Pala ya no se usa)
-    colisiones.py               rebote bola-obstaculo (copia de pong/)
-    poderes.py                  power-ups, indexado por jugador (0-based)
-    empujon.py                  dash, adaptado a normal de borde
-    impulso.py                  golpe potenciado (copia de pong/)
+    main.py                   FastAPI: monta el cliente estatico + /ws (el unico punto de entrada)
+    lobby.py                    emparejamiento (Lobby) y ciclo de vida de cada conexion
+    partida.py                  fisica y estado de una partida en curso (Partida)
+    jugador.py                  que es un jugador conectado (WebSocket + input)
+    obstaculos.py                bloques que rebotan solos en el centro del campo
+    ajustes.py                 constantes de fisica (rectangulo/triangulo/cuadrado)
+    geometria.py                vertices/bordes segun cantidad de jugadores
+    pala_triangular.py          pala sobre un borde
+    colisiones_triangulo.py     rebote bola-borde (pared o pala)
+    entidades.py                 Bola (copia de pong/, Pala ya no se usa)
+    colisiones.py                 rebote bola-obstaculo (copia de pong/)
+    poderes.py                   power-ups, indexado por jugador (0-based)
+    empujon.py                   dash, adaptado a normal de borde
+    impulso.py                   golpe potenciado (copia de pong/)
     requirements.txt
   client/
-    index.html                incluye la UI de eleccion de cantidad (lobby)
-    client.js                WebSocket + dibujo en <canvas>, cero fisica ni reglas
+    index.html                 incluye la UI de eleccion de cantidad (lobby)
     style.css
-  PROTOCOLO.md              formato exacto de los mensajes WebSocket
-  DEPLOY.md                 como subir esto a un servidor real
+    js/
+      main.js                   punto de entrada: conecta y cablea el resto de los modulos
+      red.js                    WebSocket: conectar/mandar, reparte mensajes por "type"
+      lobby.js                   botones de eleccion de cantidad (solo los ve el anfitrion)
+      juego.js                   traduce inicio/estado/rival_desconectado a estado.js + efectos
+      estado.js                   estado compartido (geometria, ultimo "estado", tu numero)
+      dibujo.js                   todo el <canvas>: pinta lo que hay en estado.js, cero fisica
+      lienzo.js                    el <canvas>/contexto + primitivas de dibujo (rect, brillo)
+      efectos.js                   particulas y estela de la bola
+      audio.js                     efectos de sonido (Web Audio, sin archivos)
+      musica.js                    loop de musica de fondo (Web Audio, sin archivos)
+      entrada.js                   teclado, mouse, y el primer gesto que desbloquea el audio
+      ajustes.js                   ajustes persistidos en localStorage + panel de UI
+      temas.js                     paletas de color
+  PROTOCOLO.md                 formato exacto de los mensajes WebSocket
+  DEPLOY.md                    como subir esto a un servidor real
 ```
 
 El servidor es la unica fuente de verdad: calcula toda la fisica y las
@@ -121,8 +148,14 @@ reglas a 60 cuadros por segundo, y le manda a todos los jugadores el estado
 completo mas una lista de "eventos" puntuales para que el cliente dispare
 particulas y sonido. Los clientes solo mandan input (teclado, mouse, el
 disparo del empujon, la eleccion de cantidad de jugadores si sos el
-anfitrion); las particulas, la estela y el sonido son puramente cosmeticos y
-viven enteros en el navegador.
+anfitrion); las particulas, la estela, la musica y el sonido son puramente
+cosmeticos y viven enteros en el navegador.
+
+Tanto el cliente como el servidor estan organizados por responsabilidad, no
+por tamaño: cada modulo hace una sola cosa (red, dibujo, audio, matchmaking,
+fisica...) y se importa donde hace falta. El cliente usa modulos ES nativos
+del navegador (`<script type="module">`) — nada de bundler ni paso de build,
+sigue siendo HTML/JS/CSS plano.
 
 ## Correr en local
 
@@ -180,6 +213,11 @@ Vas a ver algo como `Uvicorn running on http://127.0.0.1:8000`.
 11. Desconecta al anfitrion **antes** de que elija cantidad (cerrale la
     pestaña) y confirma que el siguiente en la fila pasa a ser anfitrion y
     le aparecen los botones (sin heredar ninguna eleccion vieja).
+12. Hace clic en algun lado de la pagina (el navegador necesita ese primer
+    gesto para permitir audio) y confirma que arranca la musica de fondo,
+    notablemente mas baja que los pitidos de los golpes. Apagala y prendela
+    de nuevo desde "Ajustes" → "Musica" y confirma que corta y vuelve a
+    arrancar sin quedar sonidos pisados ni superpuestos.
 
 ### Si algo no anda
 
