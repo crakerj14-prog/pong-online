@@ -1,27 +1,27 @@
-// Cliente de Pong online. Solo dibuja lo que el servidor manda: no calcula
-// fisica ni colisiones ni decide reglas. Poderes/empujon/impulso son estado
-// autoritativo del servidor; particulas/estela/sonido son 100% cosmeticos y
-// reaccionan a los "eventos" que manda el servidor, pero viven y se animan
-// aca nomas (el servidor no sabe ni le importa si hay una particula en pantalla).
+// Cliente de Pong triangular (3 jugadores). Solo dibuja lo que el servidor
+// manda: no calcula fisica, colisiones, ni vidas. Poderes/empujon/impulso
+// son estado autoritativo del servidor; particulas/estela/sonido son 100%
+// cosmeticos y reaccionan a los "eventos" que manda el servidor, pero viven
+// y se animan aca nomas.
 
 // ---------------------------------------------------------------------------
-// Temas — copia de las paletas de pong/temas.py. Es una preferencia local de
-// cada jugador (como el ajustes.json del juego de escritorio), no algo que
-// el servidor necesite conocer.
+// Temas — paletas de color, preferencia local de cada jugador (localStorage,
+// el equivalente web del ajustes.json de escritorio). El servidor no sabe
+// que tema tiene puesto cada uno.
 // ---------------------------------------------------------------------------
 const TEMAS = [
   { nombre: "Neon", fondo: "#05070d", campo: "#0d1424", borde: "#1e2b47", linea: "#243354",
-    pala_izq: "#22d3ee", pala_der: "#f472b6", bola: "#fde047", texto: "#e8eef7", tenue: "#5b6b87", acento: "#22d3ee" },
+    pala1: "#22d3ee", pala2: "#f472b6", pala3: "#a3e635", bola: "#fde047", texto: "#e8eef7", tenue: "#5b6b87", acento: "#22d3ee" },
   { nombre: "Retro", fondo: "#000000", campo: "#04140a", borde: "#0f3d22", linea: "#124d1f",
-    pala_izq: "#39ff14", pala_der: "#39ff14", bola: "#b6ff9e", texto: "#39ff14", tenue: "#1c6b2c", acento: "#39ff14" },
+    pala1: "#39ff14", pala2: "#ffb000", pala3: "#00e5ff", bola: "#b6ff9e", texto: "#39ff14", tenue: "#1c6b2c", acento: "#39ff14" },
   { nombre: "Clasico", fondo: "#000000", campo: "#000000", borde: "#3a3a3a", linea: "#4a4a4a",
-    pala_izq: "#ffffff", pala_der: "#ffffff", bola: "#ffffff", texto: "#ffffff", tenue: "#6e6e6e", acento: "#ffffff" },
+    pala1: "#ffffff", pala2: "#f87171", pala3: "#60a5fa", bola: "#ffffff", texto: "#ffffff", tenue: "#6e6e6e", acento: "#ffffff" },
   { nombre: "Atardecer", fondo: "#160b22", campo: "#241036", borde: "#4a2065", linea: "#5b2a7a",
-    pala_izq: "#ff9e57", pala_der: "#ff5c8a", bola: "#ffe066", texto: "#f7e9ff", tenue: "#8b6ba8", acento: "#ff9e57" },
+    pala1: "#ff9e57", pala2: "#ff5c8a", pala3: "#c084fc", bola: "#ffe066", texto: "#f7e9ff", tenue: "#8b6ba8", acento: "#ff9e57" },
   { nombre: "Oceano", fondo: "#02121a", campo: "#062a3a", borde: "#0d4f66", linea: "#12657f",
-    pala_izq: "#7dd3fc", pala_der: "#5eead4", bola: "#f0fdfa", texto: "#dff6ff", tenue: "#4a8ba3", acento: "#5eead4" },
+    pala1: "#7dd3fc", pala2: "#5eead4", pala3: "#a78bfa", bola: "#f0fdfa", texto: "#dff6ff", tenue: "#4a8ba3", acento: "#5eead4" },
   { nombre: "Papel", fondo: "#e8e2d4", campo: "#f5f1e8", borde: "#c9c0ac", linea: "#cfc6b2",
-    pala_izq: "#c2410c", pala_der: "#1d4ed8", bola: "#1c1917", texto: "#292524", tenue: "#a8a29e", acento: "#c2410c" },
+    pala1: "#c2410c", pala2: "#1d4ed8", pala3: "#15803d", bola: "#1c1917", texto: "#292524", tenue: "#a8a29e", acento: "#c2410c" },
 ];
 
 function mezclar(colorA, colorB, t) {
@@ -33,8 +33,7 @@ function mezclar(colorA, colorB, t) {
 }
 
 // ---------------------------------------------------------------------------
-// Ajustes: persistidos en localStorage, equivalente al ajustes.json del
-// juego de escritorio pero por navegador en vez de por instalacion.
+// Ajustes: persistidos en localStorage.
 // ---------------------------------------------------------------------------
 const CLAVE_AJUSTES = "pong-online-ajustes";
 const AJUSTES_POR_DEFECTO = { tema: 0, brillo: true, estela: true, particulas: true, scanlines: false, sonido: true };
@@ -65,8 +64,9 @@ function temaActual() {
 function resolverColorEvento(color) {
   if (color.startsWith("#")) return color;
   const t = temaActual();
-  if (color === "pala1") return t.pala_izq;
-  if (color === "pala2") return t.pala_der;
+  if (color === "pala1") return t.pala1;
+  if (color === "pala2") return t.pala2;
+  if (color === "pala3") return t.pala3;
   if (color === "bola") return t.bola;
   if (color === "acento") return t.acento;
   return t.texto;
@@ -108,11 +108,13 @@ const ctx = lienzo.getContext("2d");
 const elementoMensaje = document.getElementById("mensaje");
 
 let geometria = {
-  campo: { ancho: 800, alto: 500 },
-  pala: { ancho: 12, alto: 82, margen: 34 },
+  campo: { ancho: 800, alto: 800 },
+  vertices: null,
+  bordes: null,
+  pala: { largo: 82, grosor: 12 },
   bola: { tam: 12 },
   poder_tam: 20,
-  puntos_para_ganar: 7,
+  vidas_iniciales: 3,
 };
 
 let miNumero = null;
@@ -132,7 +134,7 @@ function mostrarMensaje(texto, esAviso = false) {
   elementoMensaje.classList.toggle("aviso", esAviso);
 }
 
-socket.addEventListener("open", () => mostrarMensaje("Conectado. Buscando oponente..."));
+socket.addEventListener("open", () => mostrarMensaje("Conectado. Buscando jugadores..."));
 socket.addEventListener("close", () => mostrarMensaje("Se perdio la conexion con el servidor.", true));
 socket.addEventListener("error", () => mostrarMensaje("No se pudo conectar al servidor.", true));
 
@@ -140,23 +142,23 @@ socket.addEventListener("message", (evento) => {
   const mensaje = JSON.parse(evento.data);
   switch (mensaje.type) {
     case "esperando":
-      mostrarMensaje("Esperando a un oponente...");
+      mostrarMensaje(`Esperando jugadores... (${mensaje.conectados}/${mensaje.necesarios})`);
       break;
 
     case "inicio":
       geometria = {
         campo: mensaje.campo,
+        vertices: mensaje.vertices,
+        bordes: mensaje.bordes,
         pala: mensaje.pala,
         bola: mensaje.bola,
         poder_tam: mensaje.poder_tam,
-        puntos_para_ganar: mensaje.puntos_para_ganar,
+        vidas_iniciales: mensaje.vidas_iniciales,
       };
       miNumero = mensaje.numero;
       lienzo.width = geometria.campo.ancho;
       lienzo.height = geometria.campo.alto;
-      mostrarMensaje(
-        `Arranco la partida. Sos el jugador ${miNumero} (${miNumero === 1 ? "izquierda" : "derecha"}).`
-      );
+      mostrarMensaje(`Arranco la partida. Sos el jugador ${miNumero}.`);
       break;
 
     case "estado":
@@ -176,7 +178,7 @@ socket.addEventListener("message", (evento) => {
       break;
 
     case "rival_desconectado":
-      mostrarMensaje("El otro jugador se desconecto.", true);
+      mostrarMensaje("Otro jugador se desconecto. Se termino la partida.", true);
       break;
 
     default:
@@ -299,7 +301,8 @@ function pitido(frecuencia, duracionMs) {
 }
 
 // ---------------------------------------------------------------------------
-// Input: flechas (estado sostenido) + Shift (accion de un solo disparo)
+// Input: flechas (estado sostenido, mueve a lo largo de tu borde) + Shift
+// (empujon, un solo disparo) + mouse (sigue al cursor 1 a 1).
 // ---------------------------------------------------------------------------
 const teclas = { arriba: false, abajo: false };
 let empujonPresionado = false;
@@ -356,14 +359,9 @@ window.addEventListener("blur", () => {
 });
 
 // --- Control por mouse ---------------------------------------------------
-// La pala sigue al mouse 1 a 1 (sin tope de velocidad) — el servidor la
-// mueve directo a la posicion que le mandamos aca, no hay "persecucion" a
-// velocidad fija como con el teclado. Mandar cualquier input de teclado
-// hace que el servidor vuelva a usar el teclado para esa pala.
-//
-// Se manda desde el evento mousemove (no en un loop aparte) para no mandar
-// nada mientras el mouse esta quieto, con un throttle simple para no
-// inundar el socket si el navegador dispara mousemove muy seguido.
+// Se manda la posicion cruda del cursor (en coordenadas del campo); el
+// servidor la proyecta sobre el borde de cada jugador. El cliente no sabe
+// nada de bordes ni de proyecciones, solo manda donde esta el mouse.
 let ultimoEnvioMouseMs = 0;
 const INTERVALO_MOUSE_MS = 16; // ~60 mensajes por segundo como mucho
 
@@ -373,9 +371,11 @@ lienzo.addEventListener("mousemove", (evento) => {
   ultimoEnvioMouseMs = ahora;
 
   const caja = lienzo.getBoundingClientRect();
+  const escalaX = geometria.campo.ancho / caja.width;
   const escalaY = geometria.campo.alto / caja.height;
+  const x = (evento.clientX - caja.left) * escalaX;
   const y = (evento.clientY - caja.top) * escalaY;
-  enviarMensaje({ type: "mouse", y: Math.round(y * 10) / 10 });
+  enviarMensaje({ type: "mouse", x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
 });
 
 // ---------------------------------------------------------------------------
@@ -401,24 +401,84 @@ function rectConBrillo(x, y, ancho, alto, colorBase) {
 function dibujarCampo() {
   const t = temaActual();
   const { ancho, alto } = geometria.campo;
-  rect(0, 0, ancho, alto, t.campo);
+  rect(0, 0, ancho, alto, t.fondo);
+  if (!geometria.vertices) return;
+
+  ctx.fillStyle = t.campo;
+  ctx.beginPath();
+  ctx.moveTo(geometria.vertices[0][0], geometria.vertices[0][1]);
+  ctx.lineTo(geometria.vertices[1][0], geometria.vertices[1][1]);
+  ctx.lineTo(geometria.vertices[2][0], geometria.vertices[2][1]);
+  ctx.closePath();
+  ctx.fill();
   ctx.strokeStyle = t.borde;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(1, 1, ancho - 2, alto - 2);
-  for (let y = 0; y < alto; y += 32) {
-    rect(ancho / 2 - 2, y + 7, 4, 18, t.linea);
-  }
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.fillStyle = t.linea;
+  ctx.beginPath();
+  ctx.arc(ancho / 2, alto / 2, 5, 0, Math.PI * 2);
+  ctx.fill();
 }
 
-function dibujarPala(estadoPala, ancho, color, esLaMia) {
-  // estadoPala.x refleja la posicion real del servidor, incluido el
-  // desplazamiento del empujon — no un x fijo calculado de "inicio".
-  rectConBrillo(estadoPala.x, estadoPala.y, ancho, estadoPala.alto, color);
-  if (esLaMia) {
+function dibujarPalaTriangular(indice, estadoPala, colorTema) {
+  const borde = geometria.bordes[indice];
+  const t = temaActual();
+  const grosor = geometria.pala.grosor;
+  const color = estadoPala.eliminado ? mezclar(t.tenue, t.campo, 0.25) : colorTema;
+
+  ctx.save();
+  ctx.translate(estadoPala.x, estadoPala.y);
+  ctx.rotate(borde.angulo);
+  rectConBrillo(-estadoPala.largo / 2, -grosor / 2, estadoPala.largo, grosor, color);
+  if (miNumero === indice + 1 && !estadoPala.eliminado) {
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
-    ctx.strokeRect(estadoPala.x - 2, estadoPala.y - 2, ancho + 4, estadoPala.alto + 4);
+    ctx.strokeRect(-estadoPala.largo / 2 - 2, -grosor / 2 - 2, estadoPala.largo + 4, grosor + 4);
   }
+  ctx.restore();
+}
+
+function normalDeBorde(indice) {
+  const angulo = geometria.bordes[indice].angulo;
+  return [-Math.sin(angulo), Math.cos(angulo)];
+}
+
+function dibujarInfoJugador(indice, colorTema, vidas, proporcionEmpujon, eliminado) {
+  const borde = geometria.bordes[indice];
+  const mx = (borde.a[0] + borde.b[0]) / 2;
+  const my = (borde.a[1] + borde.b[1]) / 2;
+  const [nx, ny] = normalDeBorde(indice);
+  // -normal: hacia afuera del triangulo (la normal del servidor apunta hacia adentro).
+  const px = mx - nx * 36;
+  const py = my - ny * 36;
+  const t = temaActual();
+
+  if (eliminado) {
+    ctx.textAlign = "center";
+    ctx.font = "12px Consolas, monospace";
+    ctx.fillStyle = t.tenue;
+    ctx.fillText("eliminado", px, py);
+    return;
+  }
+
+  const radioVida = 5;
+  const espacio = 14;
+  const inicioX = px - ((vidas - 1) * espacio) / 2;
+  for (let i = 0; i < vidas; i++) {
+    ctx.fillStyle = colorTema;
+    ctx.beginPath();
+    ctx.arc(inicioX + i * espacio, py, radioVida, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const anchoBarra = 40;
+  const altoBarra = 4;
+  const bx = px - anchoBarra / 2;
+  const by = py + 14;
+  rect(bx, by, anchoBarra, altoBarra, mezclar(colorTema, t.campo, 0.75));
+  const relleno = proporcionEmpujon >= 1 ? colorTema : mezclar(colorTema, t.campo, 0.35);
+  rect(bx, by, anchoBarra * proporcionEmpujon, altoBarra, relleno);
 }
 
 function dibujarObstaculos() {
@@ -432,17 +492,6 @@ function dibujarObstaculos() {
 function dibujarBola() {
   const tam = geometria.bola.tam;
   rectConBrillo(ultimoEstado.bola.x, ultimoEstado.bola.y, tam, tam, colorBolaActual());
-}
-
-function dibujarMarcador() {
-  const t = temaActual();
-  const { ancho } = geometria.campo;
-  ctx.textAlign = "center";
-  ctx.font = "bold 44px Consolas, monospace";
-  ctx.fillStyle = t.pala_izq;
-  ctx.fillText(String(ultimoEstado.marcador[0]), ancho / 2 - 70, 58);
-  ctx.fillStyle = t.pala_der;
-  ctx.fillText(String(ultimoEstado.marcador[1]), ancho / 2 + 70, 58);
 }
 
 function dibujarPoder(poder) {
@@ -467,26 +516,6 @@ function dibujarPoder(poder) {
   ctx.textBaseline = "middle";
   ctx.fillText(poder.simbolo, poder.x, poder.y);
   ctx.textBaseline = "alphabetic";
-}
-
-function dibujarIndicadorEmpujon(proporcion, color, lado) {
-  const t = temaActual();
-  const { ancho: campoAncho, alto: campoAlto } = geometria.campo;
-  const anchoBarra = 34;
-  const altoBarra = 5;
-  const y = campoAlto - 16;
-  const x = lado === "izq"
-    ? geometria.pala.margen
-    : campoAncho - geometria.pala.margen - anchoBarra;
-
-  rect(x, y, anchoBarra, altoBarra, mezclar(color, t.campo, 0.75));
-  const relleno = proporcion >= 1 ? color : mezclar(color, t.campo, 0.35);
-  const ancho = anchoBarra * proporcion;
-  if (lado === "izq") {
-    rect(x, y, ancho, altoBarra, relleno);
-  } else {
-    rect(x + anchoBarra - ancho, y, ancho, altoBarra, relleno);
-  }
 }
 
 function dibujarPanel(titulo, subtitulo) {
@@ -520,24 +549,25 @@ function dibujarScanlines() {
 function dibujar() {
   dibujarCampo();
 
-  if (!ultimoEstado) {
+  if (!ultimoEstado || !geometria.bordes) {
     if (ajustes.scanlines) dibujarScanlines();
     return;
   }
 
   const t = temaActual();
+  const coloresPala = [t.pala1, t.pala2, t.pala3];
 
-  dibujarMarcador();
   dibujarObstaculos();
   if (ajustes.particulas) dibujarParticulas();
   if (ajustes.estela) dibujarEstela();
   if (ultimoEstado.poder) dibujarPoder(ultimoEstado.poder);
 
-  dibujarPala(ultimoEstado.pala1, geometria.pala.ancho, t.pala_izq, miNumero === 1);
-  dibujarPala(ultimoEstado.pala2, geometria.pala.ancho, t.pala_der, miNumero === 2);
-
-  dibujarIndicadorEmpujon(ultimoEstado.empujon1, t.pala_izq, "izq");
-  dibujarIndicadorEmpujon(ultimoEstado.empujon2, t.pala_der, "der");
+  for (let i = 0; i < 3; i++) {
+    dibujarPalaTriangular(i, ultimoEstado.palas[i], coloresPala[i]);
+  }
+  for (let i = 0; i < 3; i++) {
+    dibujarInfoJugador(i, coloresPala[i], ultimoEstado.vidas[i], ultimoEstado.empujon[i], ultimoEstado.palas[i].eliminado);
+  }
 
   if (!ultimoEstado.terminada) {
     dibujarBola();
@@ -553,7 +583,7 @@ function dibujar() {
     ctx.fillStyle = t.acento;
     ctx.font = "bold 26px Consolas, monospace";
     ctx.textAlign = "center";
-    ctx.fillText(String(ultimoEstado.cuenta_saque), geometria.campo.ancho / 2, geometria.campo.alto / 2 + 78);
+    ctx.fillText(String(ultimoEstado.cuenta_saque), geometria.campo.ancho / 2, geometria.campo.alto / 2 + 40);
   }
 
   if (ajustes.scanlines) dibujarScanlines();

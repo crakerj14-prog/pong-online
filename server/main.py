@@ -1,23 +1,27 @@
-"""Servidor autoritativo de Pong multijugador.
+"""Servidor autoritativo de Pong triangular, 3 jugadores.
 
 Un solo proceso hace dos cosas:
   1. Sirve los archivos estaticos del cliente (client/index.html, client.js,
      style.css) por HTTP.
-  2. Acepta conexiones WebSocket en /ws, empareja de a dos, y corre el loop
+  2. Acepta conexiones WebSocket en /ws, empareja de a tres, y corre el loop
      de juego para cada partida a 60 cuadros por segundo.
 
-Los clientes nunca calculan fisica: solo mandan input (teclado, mouse, el
-disparo del empujon) y reciben el estado completo del juego en cada cuadro,
-mas una lista de "eventos" puntuales (golpes, puntos, poderes) para que
-decidan como festejarlos con particulas y sonido. Ver PROTOCOLO.md para el
-formato exacto de los mensajes.
+El campo es un triangulo: cada jugador defiende un borde. Si se le escapa
+la bola por una parte que su pala no cubre, pierde una vida; a las 0 vidas
+su borde se convierte en pared fija (sigue rebotando la bola, pero ya no
+hay nada que perder ahi). Gana el ultimo jugador con vidas.
+
+Los clientes nunca calculan fisica: mandan input (teclado, mouse, el
+disparo del empujon) y reciben el estado completo en cada cuadro, mas una
+lista de "eventos" puntuales para particulas/sonido. Ver PROTOCOLO.md.
 
 Ejecutar con:  uvicorn main:app --reload
 """
 
-from __future__ import annotations  # para poder anotar "Jugador | None" en Python < 3.10
+from __future__ import annotations
 
 import asyncio
+import math
 import random
 from pathlib import Path
 
@@ -26,9 +30,12 @@ from fastapi.staticfiles import StaticFiles
 
 import ajustes as cfg
 import colisiones
+import colisiones_triangulo
+import geometria
 from empujon import Empujon
-from entidades import Bola, Pala
+from entidades import Bola
 from impulso import Impulso
+from pala_triangular import PalaBorde
 from poderes import Poderes
 
 RAIZ = Path(__file__).resolve().parent
@@ -44,25 +51,24 @@ class Jugador:
         self.ws = ws
         self.arriba = False
         self.abajo = False
-        self.mouse_y = None       # ultimo Y de mouse recibido, o None si nunca mando uno
+        self.mouse_x = None
+        self.mouse_y = None
         self.modo_control = "teclado"  # o "mouse": gana el que se uso mas reciente
-        self.partida = None       # se asigna al emparejar con un rival
-        self.numero = None        # 1 o 2, se asigna al emparejar
+        self.partida = None            # se asigna al emparejar
+        self.numero = None             # 1, 2 o 3, se asigna al emparejar
 
     @property
     def direccion(self):
-        """-1 arriba, +1 abajo, 0 quieto. Mismo signo que Pala.mover()."""
+        """-1 hacia `a`, +1 hacia `b` a lo largo del borde. Mismo signo que
+        PalaBorde.mover()."""
         return int(self.abajo) - int(self.arriba)
 
 
 class Obstaculo:
-    """Bloque que rebota solo en la franja central del campo.
-
-    Se comporta como una pala inmovil para la fisica de rebote — reusa
-    colisiones.resolver_pala tal cual, sin tocarle una linea a ese modulo —
-    pero nadie la controla y nunca le imprime efecto extra a la bola
-    (velocidad_actual siempre en 0).
-    """
+    """Bloque que rebota solo en un cuadrado central. Se comporta como una
+    pala inmovil para colisiones.resolver_pala (mismo truco que en la
+    version de 2 jugadores): nadie la controla, nunca le imprime efecto a
+    la bola."""
 
     def __init__(self, x, y, ancho, alto, vx, vy):
         self.x = x
@@ -91,14 +97,21 @@ class Obstaculo:
             self.y = max(y_min, min(y_max - self.alto, self.y))
 
 
+def _limites_obstaculos():
+    return (
+        cfg.CENTRO_X - cfg.OBSTACULO_RADIO_ZONA,
+        cfg.CENTRO_X + cfg.OBSTACULO_RADIO_ZONA,
+        cfg.CENTRO_Y - cfg.OBSTACULO_RADIO_ZONA,
+        cfg.CENTRO_Y + cfg.OBSTACULO_RADIO_ZONA,
+    )
+
+
 def _crear_obstaculos():
-    x_min_frac, x_max_frac = cfg.OBSTACULO_ZONA_X
-    x_min = cfg.ANCHO * x_min_frac
-    x_max = cfg.ANCHO * x_max_frac
+    x_min, x_max, y_min, y_max = _limites_obstaculos()
     obstaculos = []
     for _ in range(cfg.OBSTACULO_CANTIDAD):
         x = random.uniform(x_min, x_max - cfg.OBSTACULO_ANCHO)
-        y = random.uniform(0, cfg.ALTO - cfg.OBSTACULO_ALTO)
+        y = random.uniform(y_min, y_max - cfg.OBSTACULO_ALTO)
         vx = random.choice((-1, 1)) * random.uniform(cfg.OBSTACULO_VEL_MIN, cfg.OBSTACULO_VEL_MAX)
         vy = random.choice((-1, 1)) * random.uniform(cfg.OBSTACULO_VEL_MIN, cfg.OBSTACULO_VEL_MAX)
         obstaculos.append(Obstaculo(x, y, cfg.OBSTACULO_ANCHO, cfg.OBSTACULO_ALTO, vx, vy))
@@ -106,53 +119,59 @@ def _crear_obstaculos():
 
 
 class Partida:
-    """Una partida entre dos jugadores: el estado y el loop de fisica."""
+    """Una partida entre 3 jugadores: el estado y el loop de fisica."""
 
-    def __init__(self, jugador1: Jugador, jugador2: Jugador):
-        self.j1 = jugador1
-        self.j2 = jugador2
-        self.pala1 = Pala(cfg.PALA_MARGEN)
-        self.pala2 = Pala(cfg.ANCHO - cfg.PALA_MARGEN - cfg.PALA_ANCHO)
+    def __init__(self, jugadores):
+        self.jugadores = jugadores  # lista de 3 Jugador, indice 0/1/2 = numero 1/2/3
+        self.palas = [PalaBorde(borde) for borde in geometria.BORDES]
         self.bola = Bola()
         self.obstaculos = _crear_obstaculos()
-        self.poderes = Poderes(self.pala1, self.pala2)
-        self.empujon1 = Empujon(self.pala1, hacia_derecha=True)
-        self.empujon2 = Empujon(self.pala2, hacia_derecha=False)
+        self.poderes = Poderes(self.palas)
+        self.empujones = [Empujon(pala) for pala in self.palas]
         self.impulso = Impulso()
-        self.eventos = []  # particulas/sonidos puntuales acumulados desde el ultimo broadcast
+        self.eventos = []
 
-        self.marcador = [0, 0]
+        self.vidas = [cfg.VIDAS_INICIALES] * 3
+        self.eliminado = [False, False, False]
+        self.ultimo_en_golpear = None  # numero 1/2/3, o None
+
         self.espera_saque = 0
         self.terminada = False
         self.ganador = None
-        self.activa = True  # se apaga cuando alguien se desconecta
-        self._sacar(direccion=random.choice((-1, 1)))
+        self.activa = True
+        self._sacar()
 
     # --- Ciclo de partida ------------------------------------------------
-    def _sacar(self, direccion):
-        self.bola.reiniciar(direccion, cfg.BOLA_VEL_INICIAL)
+    def _sacar(self):
+        angulo = random.uniform(0, math.tau)
+        self.bola.vx = math.cos(angulo) * cfg.BOLA_VEL_INICIAL
+        self.bola.vy = math.sin(angulo) * cfg.BOLA_VEL_INICIAL
+        self.bola.x = cfg.CENTRO_X - self.bola.tam / 2
+        self.bola.y = cfg.CENTRO_Y - self.bola.tam / 2
+        self.bola.x_previo, self.bola.y_previo = self.bola.x, self.bola.y
         self.espera_saque = cfg.FRAMES_SAQUE
         self.impulso.cancelar()
+        self.ultimo_en_golpear = None
 
     def activar_empujon(self, numero_jugador):
-        empujon = self.empujon1 if numero_jugador == 1 else self.empujon2
+        empujon = self.empujones[numero_jugador - 1]
         if empujon.activar():
             self._evento_sonido(200, 40)
 
     # --- Bucle de fisica ---------------------------------------------------
     def actualizar(self):
-        self._mover_jugador(self.pala1, self.j1)
-        self._mover_jugador(self.pala2, self.j2)
-        self.pala1.actualizar_efecto()
-        self.pala2.actualizar_efecto()
-        self.empujon1.actualizar()
-        self.empujon2.actualizar()
+        for indice, jugador in enumerate(self.jugadores):
+            if self.eliminado[indice]:
+                continue
+            self._mover_jugador(self.palas[indice], jugador)
+            self.palas[indice].actualizar_efecto()
+            self.empujones[indice].actualizar()
+
         self.poderes.actualizar_spawn(habilitado=True)
 
-        x_min_frac, x_max_frac = cfg.OBSTACULO_ZONA_X
-        x_min, x_max = cfg.ANCHO * x_min_frac, cfg.ANCHO * x_max_frac
+        x_min, x_max, y_min, y_max = _limites_obstaculos()
         for obstaculo in self.obstaculos:
-            obstaculo.mover(x_min, x_max, 0, cfg.ALTO)
+            obstaculo.mover(x_min, x_max, y_min, y_max)
 
         if self.espera_saque > 0:
             self.espera_saque -= 1
@@ -162,31 +181,15 @@ class Partida:
         self._mover_bola()
 
     def _mover_jugador(self, pala, jugador):
-        """Teclado mueve a velocidad fija (Pala.mover); mouse sigue al cursor
-        1 a 1, sin tope de velocidad — gana el que se uso mas reciente.
-
-        Nota: sin tope de velocidad, en teoria un salto de mouse MUY rapido
-        podria saltearse la pelota sin que se detecte el choque (el barrido
-        de colisiones.py cubre el movimiento de la pelota, no el de la pala
-        saltando de golpe). Para un juego casual el riesgo se acepta: en el
-        peor caso se escapa un punto, no se rompe nada. Si algun dia se
-        siente injusto, la forma mas simple de arreglarlo es limitar el
-        salto maximo por cuadro en _mover_pala_a a algo <= pala.alto.
-        """
-        if jugador.modo_control == "mouse" and jugador.mouse_y is not None:
-            self._mover_pala_a(pala, jugador.mouse_y)
+        """Teclado mueve a velocidad fija; mouse sigue al cursor 1 a 1 (ver
+        la misma nota de riesgo aceptado que la version de 2 jugadores,
+        documentada ahi en detalle: un salto de mouse muy rapido en teoria
+        podria saltearse la bola sin que se detecte el choque)."""
+        if jugador.modo_control == "mouse" and jugador.mouse_x is not None:
+            s = pala.borde.posicion_tangencial((jugador.mouse_x, jugador.mouse_y))
+            pala.mover_a(s)
         else:
             pala.mover(jugador.direccion)
-
-    @staticmethod
-    def _mover_pala_a(pala, y_centro_objetivo):
-        anterior = pala.y
-        nueva_y = y_centro_objetivo - pala.alto / 2
-        pala.y = max(0, min(cfg.ALTO - pala.alto, nueva_y))
-        # Se calcula a mano porque Pala.mover() no se llamo: sin esto, el
-        # empujon que la pala le da a la pelota al golpearla (ver
-        # colisiones._rebote_frontal) se quedaria con un valor viejo.
-        pala.velocidad_actual = pala.y - anterior
 
     def _mover_bola(self):
         bola = self.bola
@@ -194,71 +197,69 @@ class Partida:
         bola.x += bola.vx
         bola.y += bola.vy
 
-        y_pared = colisiones.chocar_con_paredes(bola)
-        if y_pared is not None:
-            self._evento_particulas(bola.centro_x, y_pared, "bola", 10)
-            self._evento_sonido(320, 18)
-
-        for pala in (self.pala1, self.pala2):
-            resultado = colisiones.resolver_pala(bola, pala, cfg.DIFICULTAD)
+        for indice, borde in enumerate(geometria.BORDES):
+            pala = None if self.eliminado[indice] else self.palas[indice]
+            resultado = colisiones_triangulo.procesar_borde(bola, borde, pala, self.eliminado[indice])
             if resultado is None:
                 continue
 
-            color_pala = "pala1" if pala is self.pala1 else "pala2"
-            if resultado["tipo"] == "frontal":
-                self._evento_particulas(bola.centro_x, bola.centro_y, color_pala, 14)
-                self._evento_sonido(int(480 + resultado["rapidez"] * 22), 20)
-            else:
-                self._evento_particulas(bola.centro_x, bola.centro_y, color_pala, 8)
-                self._evento_sonido(260, 16)
+            if resultado["tipo"] == "perdida":
+                self._perder_vida(indice)
+                return
 
-            if pala.dash_activo:
-                self.impulso.activar(bola, cfg.IMPULSO_COLOR)
-                self._evento_particulas(bola.centro_x, bola.centro_y, cfg.IMPULSO_COLOR, 26)
-                self._evento_sonido(900, 60)
-            else:
-                self.impulso.cancelar()
+            color_pala = f"pala{indice + 1}"
+            self._evento_particulas(bola.centro_x, bola.centro_y, color_pala, 14)
+            self._evento_sonido(int(480 + resultado["rapidez"] * 22), 20)
+
+            if not self.eliminado[indice]:
+                self.ultimo_en_golpear = indice + 1
+                if self.palas[indice].dash_activo:
+                    self.impulso.activar(bola, cfg.IMPULSO_COLOR)
+                    self._evento_particulas(bola.centro_x, bola.centro_y, cfg.IMPULSO_COLOR, 26)
+                    self._evento_sonido(900, 60)
+                else:
+                    self.impulso.cancelar()
             break
+        else:
+            # Ningun borde reboto ni hubo vida perdida: prueba obstaculos y poder.
+            for obstaculo in self.obstaculos:
+                resultado = colisiones.resolver_pala(bola, obstaculo, cfg.DIFICULTAD)
+                if resultado is None:
+                    continue
+                cantidad = 14 if resultado["tipo"] == "frontal" else 8
+                self._evento_particulas(bola.centro_x, bola.centro_y, "acento", cantidad)
+                self._evento_sonido(300, 15)
+                break
 
-        for obstaculo in self.obstaculos:
-            resultado = colisiones.resolver_pala(bola, obstaculo, cfg.DIFICULTAD)
-            if resultado is None:
-                continue
-            cantidad = 14 if resultado["tipo"] == "frontal" else 8
-            self._evento_particulas(bola.centro_x, bola.centro_y, "acento", cantidad)
-            self._evento_sonido(300, 15)
-            break
+            resultado_poder = self.poderes.recoger_si_toca(bola, self.ultimo_en_golpear)
+            if resultado_poder is not None:
+                self._evento_particulas(bola.centro_x, bola.centro_y, resultado_poder["color"], 22)
+                self._evento_sonido(700, 45)
 
-        resultado_poder = self.poderes.recoger_si_toca(bola)
-        if resultado_poder is not None:
-            self._evento_particulas(bola.centro_x, bola.centro_y, resultado_poder["color"], 22)
-            self._evento_sonido(700, 45)
-
-        if bola.x + bola.tam < 0:
-            self._anotar(jugador=2)
-        elif bola.x > cfg.ANCHO:
-            self._anotar(jugador=1)
-
-    def _anotar(self, jugador):
-        indice = jugador - 1
-        self.marcador[indice] += 1
-        borde = 0 if jugador == 2 else cfg.ANCHO
-        self._evento_particulas(borde, self.bola.centro_y, "acento", 26)
+    def _perder_vida(self, indice_jugador):
+        self.vidas[indice_jugador] -= 1
+        borde = geometria.BORDES[indice_jugador]
+        centro_borde = borde.punto(borde.longitud / 2)
+        self._evento_particulas(centro_borde[0], centro_borde[1], "acento", 26)
         self._evento_sonido(180, 90)
 
-        if self.marcador[indice] >= cfg.PUNTOS_PARA_GANAR:
+        if self.vidas[indice_jugador] <= 0:
+            self.eliminado[indice_jugador] = True
+            self.palas[indice_jugador].offset_normal = 0.0
+
+        vivos = [n for n in range(3) if not self.eliminado[n]]
+        if len(vivos) <= 1:
             self.terminada = True
-            self.ganador = jugador
+            self.ganador = vivos[0] + 1 if vivos else None
             return
-        # Saca hacia quien acaba de encajar el punto.
-        self._sacar(direccion=1 if jugador == 1 else -1)
+
+        self._sacar()
 
     # --- Eventos puntuales (particulas/sonido) ------------------------------
     def _evento_particulas(self, x, y, color, cantidad):
         """`color` es un hex fijo ("#rrggbb") o una clave de tema
-        ("pala1"/"pala2"/"bola"/"acento") que el cliente resuelve contra su
-        propia paleta. El servidor no sabe ni le importa que tema tiene
-        elegido cada jugador."""
+        ("pala1"/"pala2"/"pala3"/"acento") que el cliente resuelve contra su
+        propia paleta local."""
         self.eventos.append({
             "tipo": "particulas", "x": round(x, 1), "y": round(y, 1),
             "color": color, "cantidad": cantidad,
@@ -277,23 +278,30 @@ class Partida:
                 "x": round(info["x"], 1), "y": round(info["y"], 1),
             }
 
+        palas_json = []
+        for indice, pala in enumerate(self.palas):
+            cx, cy = pala.centro_mundo()
+            palas_json.append({
+                "x": round(cx, 1), "y": round(cy, 1),
+                "largo": round(pala.largo, 1),
+                "eliminado": self.eliminado[indice],
+            })
+
         mensaje = {
             "type": "estado",
             "bola": {"x": round(self.bola.x, 1), "y": round(self.bola.y, 1)},
-            "pala1": {"x": round(self.pala1.x, 1), "y": round(self.pala1.y, 1), "alto": round(self.pala1.alto, 1)},
-            "pala2": {"x": round(self.pala2.x, 1), "y": round(self.pala2.y, 1), "alto": round(self.pala2.alto, 1)},
+            "palas": palas_json,
+            "vidas": list(self.vidas),
             "obstaculos": [
                 {"x": round(o.x, 1), "y": round(o.y, 1), "ancho": o.ancho, "alto": o.alto}
                 for o in self.obstaculos
             ],
-            "marcador": self.marcador,
             "saque": self.espera_saque > 0,
             "cuenta_saque": self.espera_saque // (cfg.FRAMES_SAQUE // 3 + 1) + 1,
             "terminada": self.terminada,
             "ganador": self.ganador,
             "poder": poder,
-            "empujon1": round(self.empujon1.proporcion_espera, 2),
-            "empujon2": round(self.empujon2.proporcion_espera, 2),
+            "empujon": [round(e.proporcion_espera, 2) for e in self.empujones],
             "impulso_color": self.impulso.color,
             "eventos": self.eventos,
         }
@@ -302,27 +310,24 @@ class Partida:
 
 
 async def bucle_partida(partida: Partida):
-    """Tick fijo a cfg.FPS por segundo: fisica + broadcast a ambos jugadores."""
+    """Tick fijo a cfg.FPS por segundo: fisica + broadcast a los 3 jugadores."""
     intervalo = 1 / cfg.FPS
     while partida.activa:
         partida.actualizar()
         mensaje = partida.estado_json()
-        for jugador in (partida.j1, partida.j2):
+        for jugador in partida.jugadores:
             try:
                 await jugador.ws.send_json(mensaje)
             except Exception:
-                # El otro lado ya se entera por su propio receive_json() al
-                # desconectarse; aca solo evitamos que un envio fallido tumbe
-                # el loop entero.
                 partida.activa = False
         if partida.terminada:
             break
         await asyncio.sleep(intervalo)
 
 
-# Jugador esperando rival. None si no hay nadie en espera. Solo puede haber
-# uno a la vez: en cuanto llega un segundo, se emparejan y arranca la partida.
-esperando: Jugador | None = None
+# Jugadores esperando para completar un trio. Como mucho 2 en espera: en
+# cuanto llega el tercero, se arma la partida y la lista queda vacia.
+esperando: list = []
 lock_emparejar = asyncio.Lock()
 
 
@@ -333,31 +338,40 @@ async def websocket_endpoint(ws: WebSocket):
     jugador = Jugador(ws)
 
     async with lock_emparejar:
-        if esperando is None:
-            esperando = jugador
-            companero = None
+        esperando.append(jugador)
+        if len(esperando) < 3:
+            grupo = None
         else:
-            companero = esperando
-            esperando = None
+            grupo = esperando[:3]
+            esperando = esperando[3:]
 
-    if companero is None:
-        await ws.send_json({"type": "esperando"})
+    if grupo is None:
+        await ws.send_json({
+            "type": "esperando",
+            "conectados": len(esperando),
+            "necesarios": 3,
+        })
     else:
-        companero.numero = 1
-        jugador.numero = 2
-        partida = Partida(companero, jugador)
-        companero.partida = partida
-        jugador.partida = partida
+        for indice, j in enumerate(grupo):
+            j.numero = indice + 1
+        partida = Partida(grupo)
+        for j in grupo:
+            j.partida = partida
 
-        campo = {
+        base_inicio = {
             "campo": {"ancho": cfg.ANCHO, "alto": cfg.ALTO},
-            "pala": {"ancho": cfg.PALA_ANCHO, "alto": cfg.PALA_ALTO, "margen": cfg.PALA_MARGEN},
+            "vertices": [list(v) for v in geometria.VERTICES],
+            "bordes": [
+                {"a": list(b.a), "b": list(b.b), "angulo": b.angulo}
+                for b in geometria.BORDES
+            ],
+            "pala": {"largo": cfg.PALA_LARGO, "grosor": cfg.PALA_GROSOR},
             "bola": {"tam": cfg.BOLA_TAM},
             "poder_tam": cfg.PODER_TAM,
-            "puntos_para_ganar": cfg.PUNTOS_PARA_GANAR,
+            "vidas_iniciales": cfg.VIDAS_INICIALES,
         }
-        await companero.ws.send_json({"type": "inicio", "numero": 1, **campo})
-        await ws.send_json({"type": "inicio", "numero": 2, **campo})
+        for j in grupo:
+            await j.ws.send_json({"type": "inicio", "numero": j.numero, **base_inicio})
 
         asyncio.create_task(bucle_partida(partida))
 
@@ -374,8 +388,9 @@ async def websocket_endpoint(ws: WebSocket):
                     jugador.abajo = presionada
                 jugador.modo_control = "teclado"
             elif tipo == "mouse":
-                y = mensaje.get("y")
-                if isinstance(y, (int, float)):
+                x, y = mensaje.get("x"), mensaje.get("y")
+                if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+                    jugador.mouse_x = float(x)
                     jugador.mouse_y = float(y)
                     jugador.modo_control = "mouse"
             elif tipo == "accion":
@@ -385,16 +400,17 @@ async def websocket_endpoint(ws: WebSocket):
         pass
     finally:
         async with lock_emparejar:
-            if esperando is jugador:
-                esperando = None
+            if jugador in esperando:
+                esperando.remove(jugador)
 
         if jugador.partida is not None:
             jugador.partida.activa = False
-            rival = jugador.partida.j1 if jugador is jugador.partida.j2 else jugador.partida.j2
-            try:
-                await rival.ws.send_json({"type": "rival_desconectado"})
-            except Exception:
-                pass
+            for otro in jugador.partida.jugadores:
+                if otro is not jugador:
+                    try:
+                        await otro.ws.send_json({"type": "rival_desconectado"})
+                    except Exception:
+                        pass
 
 
 # Se monta al final: las rutas declaradas arriba (/ws) tienen prioridad sobre

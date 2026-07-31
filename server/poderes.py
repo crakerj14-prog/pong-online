@@ -1,22 +1,19 @@
 """Poderes: icono flotante que aparece cada tanto y modifica la partida al
-tocarlo. No sabe nada de tkinter ni de sonido: aplica el efecto y devuelve la
-info del poder para que quien lo llame decida como celebrarlo (particulas,
-pitido, etc).
-
-Copia identica de pong/poderes.py.
+tocarlo. Con 3 palas no se puede inferir "quien la toco por ultima vez" del
+signo de la velocidad (como hacia la version de 2 jugadores): el llamador
+tiene que pasarlo explicitamente.
 """
 
 import random
 
 import ajustes as cfg
-from entidades import solapan
+import geometria
 
 
 class Poderes:
-    def __init__(self, pala_izq, pala_der):
-        self.pala_izq = pala_izq
-        self.pala_der = pala_der
-        self.actual = None                       # poder esperando en el campo, o None
+    def __init__(self, palas):
+        self.palas = palas  # lista de 3 PalaBorde, indice 0/1/2 = jugador 1/2/3
+        self.actual = None
         self.frames_restantes = self._nuevo_intervalo()
 
     def reiniciar(self):
@@ -41,38 +38,39 @@ class Poderes:
     def _generar(self):
         pesos = [p["peso"] for p in cfg.PODERES]
         info = dict(random.choices(cfg.PODERES, weights=pesos, k=1)[0])
-        x_min, x_max = cfg.PODER_ZONA_X
-        info["x"] = random.uniform(cfg.ANCHO * x_min, cfg.ANCHO * x_max)
-        info["y"] = random.uniform(cfg.PODER_MARGEN_Y, cfg.ALTO - cfg.PODER_MARGEN_Y)
+        x, y = geometria.punto_aleatorio_central(cfg.PODER_RADIO_SPAWN)
+        info["x"], info["y"] = x, y
         self.actual = info
 
     def caja(self):
         x, y, r = self.actual["x"], self.actual["y"], cfg.PODER_TAM / 2
         return x - r, y - r, x + r, y + r
 
-    def recoger_si_toca(self, bola):
-        """Si la bola toca el poder activo, lo aplica y devuelve su info (para
-        que el llamador dispare particulas/sonido). Si no hay contacto, None.
-        """
-        if self.actual is None or not solapan(bola.caja(), self.caja()):
+    def recoger_si_toca(self, bola, ultimo_en_golpear):
+        """`ultimo_en_golpear` es el numero (1, 2 o 3) de quien toco la bola
+        por ultima vez, o None si nadie la toco todavia en esta jugada."""
+        if self.actual is None:
+            return None
+
+        x1, y1, x2, y2 = self.caja()
+        bx1, by1, bx2, by2 = bola.caja()
+        if not (bx1 < x2 and bx2 > x1 and by1 < y2 and by2 > y1):
             return None
 
         info = self.actual
         self.actual = None
         self.frames_restantes = self._nuevo_intervalo()
 
-        # No hay un registro de "quien golpeo por ultimo": el signo de la
-        # velocidad horizontal ya nos dice lo mismo, porque tras cualquier
-        # rebote en una pala la bola siempre sale apuntando hacia la otra.
-        dueño = "izq" if bola.vx > 0 else "der"
-        duracion_frames = int(info["duracion"] * cfg.FPS)
+        if ultimo_en_golpear is None:
+            return info  # se consume el poder pero, sin dueño, no hace nada
 
+        duracion_frames = int(info["duracion"] * cfg.FPS)
         if info["tipo"] == "crecer":
-            pala = self.pala_izq if dueño == "izq" else self.pala_der
-            pala.aplicar_efecto(cfg.PODER_FACTOR_CRECER, duracion_frames)
+            self.palas[ultimo_en_golpear - 1].aplicar_efecto(cfg.PODER_FACTOR_CRECER, duracion_frames)
         elif info["tipo"] == "encoger":
-            rival = self.pala_der if dueño == "izq" else self.pala_izq
-            rival.aplicar_efecto(cfg.PODER_FACTOR_ENCOGER, duracion_frames)
+            otros = [n for n in (1, 2, 3) if n != ultimo_en_golpear]
+            objetivo = random.choice(otros)
+            self.palas[objetivo - 1].aplicar_efecto(cfg.PODER_FACTOR_ENCOGER, duracion_frames)
         elif info["tipo"] == "veloz":
             self._escalar_bola(bola, cfg.PODER_FACTOR_VELOZ)
         elif info["tipo"] == "lenta":

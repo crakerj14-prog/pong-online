@@ -1,21 +1,21 @@
-"""Constantes de fisica del servidor.
+"""Constantes de fisica del servidor: modo triangular, 3 jugadores.
 
-Usa los mismos nombres que pong/ajustes.py (el juego de escritorio) para
-poder copiar entidades.py y colisiones.py sin tocarles una linea: son la
-misma fisica, solo que corriendo en el servidor en vez de en un Canvas de
-tkinter.
-
-No hay dificultad seleccionable ni CPU aca: son siempre dos humanos, asi que
-solo hace falta un unico valor de aceleracion (equivalente al nivel "Normal"
-del juego de escritorio).
+El campo es un cuadrado de ANCHO x ALTO con un triangulo equilatero
+inscripto (RADIO_TRIANGULO = distancia del centro a cada vertice). El
+centro del cuadrado coincide con el centroide del triangulo a proposito:
+asi entidades.Bola (que se centra en (ANCHO-tam)/2, (ALTO-tam)/2) sirve sin
+tocarle una linea para el saque en el medio del campo.
 """
 
-ANCHO, ALTO = 800, 500
+ANCHO, ALTO = 800, 800
+CENTRO_X, CENTRO_Y = ANCHO / 2, ALTO / 2
+RADIO_TRIANGULO = 340
+
 FPS = 60
 
-PALA_ANCHO, PALA_ALTO = 12, 82
+PALA_LARGO = 82   # a lo largo del borde (equivalente a PALA_ALTO del modo 2D)
+PALA_GROSOR = 12  # perpendicular al borde (equivalente a PALA_ANCHO)
 PALA_VEL = 7.0
-PALA_MARGEN = 34
 
 BOLA_TAM = 12
 BOLA_VEL_INICIAL = 5.0
@@ -23,19 +23,17 @@ BOLA_VEL_MAX = 15.0
 BOLA_ANGULO_MAX = 1.0  # radianes (~57 grados) al golpear el borde de la pala
 
 EFECTO_PALA = 0.35
-VX_MINIMO = 0.30
 
-ACELERACION = 1.05  # multiplicador de velocidad en cada golpe
-DIFICULTAD = {"aceleracion": ACELERACION}  # el formato que espera colisiones.resolver_pala
+ACELERACION = 1.05
+DIFICULTAD = {"aceleracion": ACELERACION}  # formato que espera colisiones.resolver_pala (obstaculos)
 
-FRAMES_SAQUE = 55  # cuenta atras antes de cada saque, a FPS cuadros por segundo
-PUNTOS_PARA_GANAR = 7
+FRAMES_SAQUE = 55
+VIDAS_INICIALES = 3
 
 
 # --- Poderes -------------------------------------------------------------
-# Mismos valores que pong/ajustes.py. El color de cada poder es fijo (no
-# depende del tema): el cliente lo usa tal cual, sin resolverlo contra su
-# paleta local.
+# Mismos valores que la version de 2 jugadores. El color de cada poder es
+# fijo (no depende del tema): el cliente lo usa tal cual.
 PODERES = [
     {"tipo": "crecer", "nombre": "Pala grande", "simbolo": "+",
      "color": "#4ade80", "duracion": 7.0, "peso": 3},
@@ -55,8 +53,7 @@ PODER_FACTOR_ENCOGER = 0.55
 PODER_FACTOR_VELOZ = 1.45
 PODER_FACTOR_LENTA = 0.6
 PODER_VEL_MIN = 3.0
-PODER_ZONA_X = (0.30, 0.70)
-PODER_MARGEN_Y = 40
+PODER_RADIO_SPAWN = 150  # radio del circulo central (seguro: cabe en el triangulo) donde puede aparecer
 
 
 # --- Empujon (dash) ----------------------------------------------------------
@@ -71,17 +68,17 @@ IMPULSO_FACTOR_PICO = 1.55
 IMPULSO_TECHO = 1.4
 IMPULSO_FACTOR_ASENTADO = 1.30
 IMPULSO_DURACION_SEG = 3.0
-IMPULSO_COLOR = "#ff3864"  # fijo, no depende del tema del cliente
+IMPULSO_COLOR = "#ff3864"
 
 
 # --- Obstaculos ----------------------------------------------------------
-# Bloques que rebotan solos en la franja central, lejos de ambas palas.
-# OBSTACULO_ZONA_X los confina como fraccion del ancho del campo: con
-# margen 34 + ancho de pala 12 = 46, y la zona empezando en 0.36 (=288px),
-# queda de sobra sin invadir donde se mueven las palas.
+# Bloques que rebotan solos en un cuadrado central. El radio del inscripto
+# del triangulo (circulo mas grande que cabe adentro) es RADIO_TRIANGULO/2
+# = 170 para uno equilatero; OBSTACULO_RADIO_ZONA=90 deja bastante margen
+# de sobra para que el cuadrado de rebote nunca toque ningun borde.
 OBSTACULO_CANTIDAD = 2
 OBSTACULO_ANCHO = 20
 OBSTACULO_ALTO = 60
 OBSTACULO_VEL_MIN = 1.2
 OBSTACULO_VEL_MAX = 2.4
-OBSTACULO_ZONA_X = (0.36, 0.64)
+OBSTACULO_RADIO_ZONA = 90

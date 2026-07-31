@@ -1,22 +1,18 @@
-"""Empujon: el dash de una pala.
+"""Empujon: el dash de una pala en modo triangular.
 
-Se dispara con una accion, tiene un tiempo de espera entre usos, y mientras
-dura desplaza la pala en X hacia adelante y la trae de vuelta sola. No sabe
-nada de la bola: solo mueve `pala.x` y marca `pala.dash_activo` mientras va
-de ida, para que quien resuelva las colisiones sepa si un golpe fue
-"potenciado".
-
-Copia identica de pong/empujon.py.
+Avanza hacia adentro del campo -- a lo largo de la normal de su borde -- y
+vuelve sola. A diferencia del modo de 2 jugadores (donde la direccion era
+"izquierda" o "derecha"), aca alcanza con un solo numero (`offset_normal`
+en PalaBorde) porque la normal de cada borde ya apunta hacia adentro por
+definicion: no hace falta un booleano de direccion.
 """
 
 import ajustes as cfg
 
 
 class Empujon:
-    def __init__(self, pala, hacia_derecha):
+    def __init__(self, pala):
         self.pala = pala
-        self.hacia_derecha = hacia_derecha   # True: avanza a la derecha (pala izquierda)
-        self.x_base = pala.x
         self.cooldown_restante = 0
         self.avance_restante = 0
         self.retorno_restante = 0
@@ -29,16 +25,15 @@ class Empujon:
 
     @property
     def proporcion_espera(self):
-        """0 justo usado (o todavia en la animacion), 1 listo de nuevo. Para
-        dibujar un indicador de cooldown."""
+        """0 justo usado (o todavia en la animacion), 1 listo de nuevo."""
         if self.listo:
             return 1.0
         if self.cooldown_restante > 0:
             return 1 - self.cooldown_restante / cfg.EMPUJON_COOLDOWN_FRAMES
-        return 0.0  # en plena animacion de ida/vuelta; el cooldown ni empezo
+        return 0.0
 
     def reiniciar(self):
-        self.pala.x = self.x_base
+        self.pala.offset_normal = 0.0
         self.pala.dash_activo = False
         self.cooldown_restante = 0
         self.avance_restante = 0
@@ -57,20 +52,18 @@ class Empujon:
 
         if self.avance_restante > 0:
             self.avance_restante -= 1
-            self._colocar(1 - self.avance_restante / cfg.EMPUJON_FRAMES_IDA)
+            proporcion = 1 - self.avance_restante / cfg.EMPUJON_FRAMES_IDA
+            self.pala.offset_normal = cfg.EMPUJON_DISTANCIA * proporcion
             self.pala.dash_activo = True
             if self.avance_restante == 0:
                 self.retorno_restante = cfg.EMPUJON_FRAMES_VUELTA
         elif self.retorno_restante > 0:
             self.pala.dash_activo = False
             self.retorno_restante -= 1
-            self._colocar(self.retorno_restante / cfg.EMPUJON_FRAMES_VUELTA)
+            proporcion = self.retorno_restante / cfg.EMPUJON_FRAMES_VUELTA
+            self.pala.offset_normal = cfg.EMPUJON_DISTANCIA * proporcion
             if self.retorno_restante == 0:
-                self.pala.x = self.x_base
+                self.pala.offset_normal = 0.0
                 self.cooldown_restante = cfg.EMPUJON_COOLDOWN_FRAMES
         else:
             self.pala.dash_activo = False
-
-    def _colocar(self, proporcion):
-        desplazamiento = cfg.EMPUJON_DISTANCIA * proporcion
-        self.pala.x = self.x_base + (desplazamiento if self.hacia_derecha else -desplazamiento)

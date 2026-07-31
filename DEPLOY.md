@@ -42,7 +42,7 @@ docker build -t pong-online .
 docker run -p 8000:8000 pong-online
 ```
 
-Y abrí `http://127.0.0.1:8000` en dos pestañas, igual que en el README.
+Y abrí `http://127.0.0.1:8000` en tres pestañas, igual que en el README.
 
 ## Opcion recomendada: Render
 
@@ -57,11 +57,11 @@ socket) gratis.
 4. Root Directory: `pong-online` (si el `Dockerfile` no esta en la raiz del
    repo sino dentro de esa carpeta).
 5. Instance Type: cualquiera sirve para probar; el plan gratuito alcanza
-   para vos y un amigo jugando. **No** subas el "Instance Count"/replicas
+   para vos y dos amigos jugando. **No** subas el "Instance Count"/replicas
    por encima de 1 (ver la seccion de arriba).
 6. Deploy. Cuando termine te da una URL tipo
-   `https://pong-online-xxxx.onrender.com` — esa es la que abris en las dos
-   pestañas (o se la pasas a tu rival).
+   `https://pong-online-xxxx.onrender.com` — esa es la que abris en las tres
+   pestañas (o se la pasas a tus rivales).
 
 No hace falta que configures el puerto a mano: Render inyecta `PORT` y el
 `CMD` del Dockerfile ya lo usa.
@@ -136,11 +136,11 @@ preferis no depender de una plataforma:
 
 ## Despues de desplegar
 
-- Probá desde dos dispositivos en redes distintas (no los dos en tu wifi de
-  casa) para confirmar que no hay ningun firewall/proxy bloqueando
+- Probá desde tres dispositivos en redes distintas (no los tres en tu wifi
+  de casa) para confirmar que no hay ningun firewall/proxy bloqueando
   WebSocket en el medio.
-- Si alguien queda pegado en "Esperando a un oponente..." y nunca aparece
-  nadie, revisa los logs de la plataforma — casi siempre es la conexion
+- Si alguien queda pegado en "Esperando jugadores..." y nunca avanza,
+  revisa los logs de la plataforma — casi siempre es la conexion
   WebSocket que no esta llegando (falta `wss://`, o el proxy delante no la
   deja pasar).
 - Recorda: reiniciar el servicio (redeploy, restart manual, o que se caiga
