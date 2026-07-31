@@ -35,6 +35,7 @@ BOLA_TAM = 12
 BOLA_VEL_INICIAL = 5.0
 BOLA_VEL_MAX = 15.0
 BOLA_ANGULO_MAX = 1.0  # radianes (~57 grados) al golpear el borde de la pala
+VX_MINIMO = 0.30  # fraccion minima de vx tras un rebote (evita que quede casi vertical); usado por colisiones.resolver_pala (obstaculos)
 
 EFECTO_PALA = 0.35
 
