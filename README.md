@@ -129,7 +129,8 @@ pong-online/
       red.js                    WebSocket: conectar/mandar, reparte mensajes por "type"
       lobby.js                   botones de eleccion de cantidad (solo los ve el anfitrion)
       juego.js                   traduce inicio/estado/rival_desconectado a estado.js + efectos
-      estado.js                   estado compartido (geometria, ultimo "estado", tu numero)
+      estado.js                   estado compartido (geometria, los 2 ultimos "estado", tu numero)
+      interpolacion.js             suaviza las posiciones entre paquete y paquete
       dibujo.js                   todo el <canvas>: pinta lo que hay en estado.js, cero fisica
       lienzo.js                    el <canvas>/contexto + primitivas de dibujo (rect, brillo)
       efectos.js                   particulas y estela de la bola
@@ -155,6 +156,25 @@ por tamaño: cada modulo hace una sola cosa (red, dibujo, audio, matchmaking,
 fisica...) y se importa donde hace falta. El cliente usa modulos ES nativos
 del navegador (`<script type="module">`) — nada de bundler ni paso de build,
 sigue siendo HTML/JS/CSS plano.
+
+### Sobre la fluidez del movimiento
+
+Dos detalles que no son obvios pero hacen toda la diferencia en como se
+siente el juego:
+
+- **El servidor duerme hasta un vencimiento fijo**, no un rato fijo despues
+  de trabajar (ver `bucle_partida` en `server/partida.py`). Dormir `1/FPS`
+  al final de cada vuelta daria un periodo real de `trabajo + 1/FPS`, o sea
+  menos cuadros por segundo de los que dice, y variable segun la carga de la
+  maquina. Como la bola avanza una vez por cuadro, un servidor lento no se
+  "ve entrecortado": **juega en camara lenta**. Pesa especialmente en
+  hosting con CPU compartida.
+- **El cliente interpola entre los dos ultimos estados** recibidos (ver
+  `client/js/interpolacion.js`), en vez de dibujar siempre el ultimo. El
+  navegador dibuja a la tasa de tu monitor y los paquetes llegan con jitter:
+  sin interpolar, cada paquete demorado se ve como un micro-tiron. El costo
+  es dibujar ~17ms en el pasado, despreciable al lado del viaje de ida y
+  vuelta al servidor que ya existe.
 
 ## Correr en local
 

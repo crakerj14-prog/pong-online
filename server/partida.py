@@ -20,6 +20,7 @@ import asyncio
 import json
 import math
 import random
+import time
 
 import ajustes as cfg
 import colisiones
@@ -344,8 +345,18 @@ async def bucle_partida(partida: Partida):
     varias veces) y se manda a todos en paralelo con `asyncio.gather` en vez
     de uno por uno, para no acumular la latencia de cada envio de forma
     secuencial. Si el envio le falla a cualquiera, se corta la partida para
-    todos (mismo criterio que antes)."""
+    todos.
+
+    La espera es hasta el proximo *vencimiento* calculado, no un rato fijo
+    despues de trabajar: dormir `1/FPS` al final de cada vuelta daria un
+    periodo real de `lo_que_tardo_el_trabajo + 1/FPS`, o sea menos de FPS
+    cuadros por segundo, y encima variable segun la carga de la maquina.
+    Eso se nota de verdad porque la bola avanza una vez por cuadro (ver
+    _mover_una_bola): un servidor lento no se "ve entrecortado", directamente
+    juega en camara lenta. Con vencimientos fijos, mientras la maquina llegue
+    a tiempo, el ritmo es constante sin importar cuanto tarde cada vuelta."""
     intervalo = 1 / cfg.FPS
+    vencimiento = time.perf_counter() + intervalo
     while partida.activa:
         partida.actualizar()
         texto = json.dumps(partida.estado_json())
@@ -357,4 +368,16 @@ async def bucle_partida(partida: Partida):
             partida.activa = False
         if partida.terminada:
             break
-        await asyncio.sleep(intervalo)
+
+        ahora = time.perf_counter()
+        espera = vencimiento - ahora
+        if espera > 0:
+            await asyncio.sleep(espera)
+            vencimiento += intervalo
+        else:
+            # Llegamos tarde a este cuadro. Se reprograma desde ahora en vez
+            # de arrastrar la deuda: si se acumulara, el loop se quedaria sin
+            # dormir nunca (dejando sin aire al resto del proceso) tratando de
+            # recuperar un tiempo que ya paso. Se prefiere perder el cuadro.
+            vencimiento = ahora + intervalo
+            await asyncio.sleep(0)  # le cede el turno al event loop igual

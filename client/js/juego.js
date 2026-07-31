@@ -1,11 +1,11 @@
 // Traduce los mensajes de partida (`inicio`, `estado`, `rival_desconectado`)
-// a cambios en el estado compartido (estado.js) y a los efectos que
-// disparan: sonido, particulas y la estela de la bola. dibujo.js se encarga
-// de pintar el resultado en el cuadro siguiente; este modulo no dibuja nada.
+// a cambios en el estado compartido (estado.js) y a los efectos puntuales
+// que disparan: sonido y particulas. dibujo.js se encarga de pintar el
+// resultado en los cuadros siguientes; este modulo no dibuja nada.
 import { pitido } from "./audio.js";
 import { ajustarTamanoLienzo } from "./dibujo.js";
-import { agregarEstela, emitirParticulas, limpiarEstela } from "./efectos.js";
-import { setGeometria, setMiNumero, setUltimoEstado } from "./estado.js";
+import { emitirParticulas } from "./efectos.js";
+import { registrarEstado, setGeometria, setMiNumero } from "./estado.js";
 import { ocultarLobby } from "./lobby.js";
 import { mostrarMensaje } from "./ui.js";
 
@@ -28,15 +28,10 @@ export function manejarInicio(mensaje) {
 }
 
 export function manejarEstado(mensaje) {
-  setUltimoEstado(mensaje);
-  if (mensaje.saque || mensaje.bolas.length === 0) {
-    limpiarEstela();
-  } else {
-    // La estela solo sigue a la primera bola: con multibola activo las
-    // demas no dejan rastro, para no complicar el sistema de estela con
-    // varias colas independientes por un efecto que dura poco.
-    agregarEstela(mensaje.bolas[0].x, mensaje.bolas[0].y);
-  }
+  registrarEstado(mensaje);
+  // La estela no se alimenta aca sino en el bucle de dibujo: tiene que
+  // seguir la posicion *interpolada* de la bola (la que se ve realmente),
+  // porque si no la cola quedaria adelantada respecto de la bola.
   for (const ev of mensaje.eventos) {
     if (ev.tipo === "particulas") {
       emitirParticulas(ev.x, ev.y, ev.color, ev.cantidad);

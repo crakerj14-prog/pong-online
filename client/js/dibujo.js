@@ -1,17 +1,21 @@
-// Todo el dibujo en <canvas>. No calcula fisica ni reglas: solo lee
-// `geometria`/`ultimoEstado` (estado.js) y los pinta. El bucle de
+// Todo el dibujo en <canvas>. No calcula fisica ni reglas: solo lee el
+// estado que mando el servidor (via interpolacion.js, que suaviza las
+// posiciones entre paquete y paquete) y lo pinta. El bucle de
 // requestAnimationFrame tambien vive aca, porque es puramente de
 // presentacion (anima particulas y el pulso de los poderes aunque no haya
 // llegado un `estado` nuevo en ese cuadro).
 import { ajustes } from "./ajustes.js";
 import {
   actualizarParticulas,
+  agregarEstela,
   colorBolaActual,
   dibujarEstela,
   dibujarParticulas,
+  limpiarEstela,
 } from "./efectos.js";
 import { ctx, lienzo, rect, rectConBrillo } from "./lienzo.js";
-import { geometria, miNumero, ultimoEstado } from "./estado.js";
+import { geometria, miNumero } from "./estado.js";
+import { estadoParaDibujar } from "./interpolacion.js";
 import { mezclar, temaActual } from "./temas.js";
 
 let reloj = 0; // frames locales, solo para animar (el pulso del poder)
@@ -100,22 +104,22 @@ function dibujarInfoJugador(indice, colorTema, vidas, proporcionEmpujon, elimina
   rect(bx, by, anchoBarra * proporcionEmpujon, altoBarra, relleno);
 }
 
-function dibujarObstaculos() {
+function dibujarObstaculos(estado) {
   const t = temaActual();
   const color = mezclar(t.tenue, t.texto, 0.25);
-  for (const o of ultimoEstado.obstaculos) {
+  for (const o of estado.obstaculos) {
     rectConBrillo(o.x, o.y, o.ancho, o.alto, color);
   }
 }
 
-function dibujarBolas() {
+function dibujarBolas(estado) {
   const tam = geometria.bola.tam;
   // Simplificacion deliberada: todas las bolas usan el mismo color de
   // impulso mientras dure, aunque el servidor solo le haya acelerado la
   // velocidad a la que efectivamente conecto el golpe potenciado (ver
   // PROTOCOLO.md).
   const color = colorBolaActual();
-  for (const bola of ultimoEstado.bolas) {
+  for (const bola of estado.bolas) {
     rectConBrillo(bola.x, bola.y, tam, tam, color);
   }
 }
@@ -175,46 +179,61 @@ function dibujarScanlines() {
 function dibujar() {
   dibujarCampo();
 
-  if (!ultimoEstado || !geometria.bordes) {
+  // Posiciones suavizadas entre los dos ultimos estados del servidor (ver
+  // interpolacion.js). Todo lo que no es posicion (vidas, empujon, si
+  // termino) viene igual que siempre, sin tocar.
+  const estado = estadoParaDibujar();
+
+  if (!estado || !geometria.bordes) {
     if (ajustes.scanlines) dibujarScanlines();
     return;
   }
 
   const t = temaActual();
   const coloresPala = [t.pala1, t.pala2, t.pala3, t.pala4];
-  const cantidadJugadores = geometria.cantidad_jugadores || ultimoEstado.palas.length;
+  const cantidadJugadores = geometria.cantidad_jugadores || estado.palas.length;
 
-  dibujarObstaculos();
+  // La estela sigue la posicion interpolada (la que realmente se dibuja), y
+  // solo a la primera bola: con multibola activo las demas no dejan rastro,
+  // para no complicar el sistema con varias colas independientes por un
+  // efecto que dura poco.
+  if (estado.saque || estado.bolas.length === 0) {
+    limpiarEstela();
+  } else {
+    agregarEstela(estado.bolas[0].x, estado.bolas[0].y);
+  }
+
+  dibujarObstaculos(estado);
   if (ajustes.particulas) dibujarParticulas();
   if (ajustes.estela) dibujarEstela();
-  for (const poder of ultimoEstado.poderes) {
+  for (const poder of estado.poderes) {
     dibujarPoder(poder);
   }
 
   for (let i = 0; i < cantidadJugadores; i++) {
     const indiceBorde = geometria.jugador_bordes[i];
-    dibujarPalaTriangular(indiceBorde, i, ultimoEstado.palas[i], coloresPala[i]);
+    dibujarPalaTriangular(indiceBorde, i, estado.palas[i], coloresPala[i]);
   }
   for (let i = 0; i < cantidadJugadores; i++) {
     const indiceBorde = geometria.jugador_bordes[i];
-    dibujarInfoJugador(indiceBorde, coloresPala[i], ultimoEstado.vidas[i], ultimoEstado.empujon[i], ultimoEstado.palas[i].eliminado);
+    dibujarInfoJugador(indiceBorde, coloresPala[i], estado.vidas[i], estado.empujon[i], estado.palas[i].eliminado);
   }
 
-  if (!ultimoEstado.terminada) {
-    dibujarBolas();
+  if (!estado.terminada) {
+    dibujarBolas(estado);
   }
 
-  if (ultimoEstado.terminada) {
-    const gano = ultimoEstado.ganador === miNumero;
+  if (estado.terminada) {
+    const gano = estado.ganador === miNumero;
     dibujarPanel(
-      gano ? "GANASTE" : `Jugador ${ultimoEstado.ganador} gana`,
+      gano ? "GANASTE" : `Jugador ${estado.ganador} gana`,
       "Recarga la pagina para jugar otra vez"
     );
-  } else if (ultimoEstado.saque) {
+  } else if (estado.saque) {
     ctx.fillStyle = t.acento;
     ctx.font = "bold 26px Consolas, monospace";
     ctx.textAlign = "center";
-    ctx.fillText(String(ultimoEstado.cuenta_saque), geometria.campo.ancho / 2, geometria.campo.alto / 2 + 40);
+    ctx.fillText(String(estado.cuenta_saque), geometria.campo.ancho / 2, geometria.campo.alto / 2 + 40);
   }
 
   if (ajustes.scanlines) dibujarScanlines();
