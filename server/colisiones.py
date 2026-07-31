@@ -1,29 +1,15 @@
-"""Fisica de choque bola-pared y bola-pala.
+"""Fisica de choque bola-pala, reutilizada para bola-obstaculo (ver
+obstaculos.py: `Obstaculo` duck-tipea la misma interfaz que una pala).
 
-Copia identica de pong/colisiones.py (el juego de escritorio). No se toco ni
-una linea: estas funciones ya eran independientes de tkinter (solo mueven la
-bola y devuelven que paso), asi que corren igual dentro del loop del servidor.
+Esta fisica no depende de la forma del campo (solo mueve la bola en X/Y
+contra una caja fija), asi que corre igual sin importar si el campo es
+rectangulo, triangulo o cuadrado.
 """
 
 import math
 
 import ajustes as cfg
 from entidades import solapan
-
-
-def chocar_con_paredes(bola):
-    """Rebota contra techo o suelo si corresponde. Devuelve la Y del choque
-    (0 o cfg.ALTO) para poder ubicar las particulas ahi, o None si no choco.
-    """
-    if bola.y <= 0:
-        bola.y = 0
-        bola.vy = abs(bola.vy)
-        return 0
-    if bola.y + bola.tam >= cfg.ALTO:
-        bola.y = cfg.ALTO - bola.tam
-        bola.vy = -abs(bola.vy)
-        return cfg.ALTO
-    return None
 
 
 def resolver_pala(bola, pala, dificultad):

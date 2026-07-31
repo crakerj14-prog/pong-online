@@ -2,9 +2,8 @@
 
 Sube la velocidad de golpe por encima del limite normal, marca que la bola
 deberia cambiar de color durante unos segundos, y despues se asienta en un
-nivel mas alto que el normal en vez de volver del todo a como estaba.
-
-Copia identica de pong/impulso.py.
+nivel mas alto que el normal en vez de volver del todo a como estaba. No
+depende de la forma del campo: solo toca la velocidad de la bola.
 """
 
 import ajustes as cfg

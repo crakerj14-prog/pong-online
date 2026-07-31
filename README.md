@@ -1,6 +1,6 @@
 # Pong online — 2 a 4 jugadores
 
-Version multijugador de [pong/](../pong/) que corre en el navegador. Antes de
+Pong multijugador en tiempo real que corre en el navegador. Antes de
 arrancar, el anfitrion (el primero en conectarse) elige cuantos van a jugar:
 **2, 3 o 4**. La forma del campo cambia segun esa eleccion — rectangulo
 clasico para 2, triangulo para 3, cuadrado para 4 — y cada jugador defiende
@@ -30,7 +30,7 @@ servidor manda.
    izquierda/derecha son de jugador — arriba/abajo son paredes fijas desde
    el arranque, igual que en el Pong clasico de toda la vida.
 
-## Que tiene (todo portado del juego de escritorio, mas lo nuevo del online)
+## Que tiene
 
 Empujon (dash con Shift) con su impulso (golpe potenciado que acelera la
 bola y le cambia el color unos segundos), particulas, estela, brillo,
@@ -57,15 +57,14 @@ lenta), tres mas:
 | `!!` Empujon sin limite | Durante 6 segundos, tu empujon ignora el tiempo de espera normal — solo te frena la animacion de ida y vuelta (~0.3s), asi que se puede encadenar bastante seguido. |
 | `Zz` Paralisis | A un rival al azar le reduce mucho la velocidad de su pala (18% de lo normal) por 4 segundos — y a la vez frena la bola (mismo factor que el poder de bola lenta), para que el paralizado tenga alguna chance real en vez de solo mirar. |
 
-## Que se reutilizo y que se reescribio
+## Como esta organizada la fisica
 
-`server/entidades.py` (solo `Bola`) y `server/colisiones.py` (para los
-obstaculos) siguen siendo **copias identicas** del juego de escritorio —
-esa parte de la fisica no depende de la forma del campo. `server/impulso.py`
-tambien quedo identico (solo toca la velocidad de la bola, no le importa la
-geometria).
+`server/entidades.py` (la `Bola`), `server/colisiones.py` (rebote contra los
+obstaculos) y `server/impulso.py` (el golpe potenciado) son las piezas que
+no dependen para nada de la forma del campo — mueven una bola en X/Y contra
+una caja fija o le tocan la velocidad, nada mas.
 
-Lo que **si** se reescribio, para que un mismo campo pueda ser rectangulo,
+Lo que sabe de geometria, para que un mismo campo pueda ser rectangulo,
 triangulo o cuadrado sin duplicar la fisica:
 
 - `server/geometria.py` — `construir(cantidad_jugadores)` arma vertices y
@@ -116,11 +115,11 @@ pong-online/
     geometria.py                vertices/bordes segun cantidad de jugadores
     pala_triangular.py          pala sobre un borde
     colisiones_triangulo.py     rebote bola-borde (pared o pala)
-    entidades.py                 Bola (copia de pong/, Pala ya no se usa)
-    colisiones.py                 rebote bola-obstaculo (copia de pong/)
+    entidades.py                 la Bola (geometria-agnostica)
+    colisiones.py                 rebote bola-obstaculo
     poderes.py                   power-ups, indexado por jugador (0-based)
     empujon.py                   dash, adaptado a normal de borde
-    impulso.py                   golpe potenciado (copia de pong/)
+    impulso.py                   golpe potenciado
     requirements.txt
   client/
     index.html                 incluye la UI de eleccion de cantidad (lobby)
